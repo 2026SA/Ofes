@@ -1,57 +1,30 @@
-const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
-function showPage(id){$$(".page").forEach(x=>x.classList.remove("active"));$("#"+id).classList.add("active");window.scrollTo({top:0,behavior:"smooth"})}
-$$(".menu-card").forEach(b=>b.onclick=()=>showPage(b.dataset.page));$$(".back").forEach(b=>b.onclick=()=>showPage("home"));
-$("#noticeText").textContent=OFES_DATA.notice;
-
-function mins(t){const [h,m]=t.split(":").map(Number);return h*60+m}
-function renderProgram(){
- const now=new Date(), n=now.getHours()*60+now.getMinutes(); let current=null,next=null;
- $("#programList").innerHTML=OFES_DATA.program.map(p=>{
-  const is=n>=mins(p.time)&&n<mins(p.end); if(is) current=p;
-  if(!next&&n<mins(p.time)) next=p;
-  return `<div class="program-item ${is?"current":""}"><div class="program-time">${p.time}</div><div><div class="program-title">${p.title}${is?'<span class="tag">開催中</span>':""}</div><div class="program-place">${p.place} · ${p.time}–${p.end}</div></div></div>`
- }).join("");
- if(current) $("#nowBox").innerHTML=`<b>ただいま開催中</b><br>${current.title} ／ ${current.place}`;
- else if(next) $("#nowBox").innerHTML=`<b>次の発表</b><br>${next.time} ${next.title} ／ ${next.place}`;
-}
-renderProgram();
-
-function distance(a,b,c,d){const R=6371000,rad=x=>x*Math.PI/180;const x=rad(c-a),y=rad(d-b);const q=Math.sin(x/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(q))}
-function showPlace(p,extra=""){ $("#placeGuide").classList.remove("hidden");$("#placeGuide").innerHTML=`<h3>${p.name}</h3><p>${p.guide}</p>${extra}` }
-$("#manualPlaces").innerHTML=OFES_DATA.places.map((p,i)=>`<button data-i="${i}">${p.name}</button>`).join("");
-$("#manualPlaces").onclick=e=>{if(e.target.dataset.i!==undefined)showPlace(OFES_DATA.places[+e.target.dataset.i])};
-$("#locateBtn").onclick=()=>{
- const out=$("#locationResult");
- if(!navigator.geolocation){out.textContent="この端末では位置情報を利用できません。";return}
- out.textContent="現在地を確認しています…";
- navigator.geolocation.getCurrentPosition(pos=>{
-  const {latitude:lat,longitude:lng,accuracy}=pos.coords;
-  const usable=OFES_DATA.places.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lng));
-  out.innerHTML=`緯度: ${lat.toFixed(6)}<br>経度: ${lng.toFixed(6)}<br>精度の目安: ±${Math.round(accuracy)}m`;
-  if(!usable.length){out.innerHTML+=`<br><b>試作品：</b>data.js に各会場の緯度・経度を登録すると会場判定ができます。`;return}
-  const ranked=usable.map(p=>({p,d:distance(lat,lng,p.lat,p.lng)})).sort((a,b)=>a.d-b.d);
-  const best=ranked[0]; showPlace(best.p,`<p>現在地から約 ${Math.round(best.d)}m</p>`);
- },err=>out.textContent="位置情報を取得できませんでした。位置情報の許可設定をご確認ください。",{enableHighAccuracy:true,timeout:10000,maximumAge:30000});
-};
-
-const stampKey="ofes-stamps";
-function got(){try{return JSON.parse(localStorage.getItem(stampKey)||"[]")}catch{return []}}
-function save(a){localStorage.setItem(stampKey,JSON.stringify([...new Set(a)]))}
-function renderStamps(){
- const a=got(), total=OFES_DATA.stamps.length;
- $("#stampList").innerHTML=OFES_DATA.stamps.map(s=>`<div class="stamp-card ${a.includes(s.id)?"got":""}"><div class="stamp-icon">⭐</div><h3>STAMP ${s.id}</h3><div>${a.includes(s.id)?"GET!":"未獲得"}</div><button class="hint-btn" data-h="${s.id}">ヒントを見る</button><p id="hint${s.id}" class="hint hidden">${s.hint}</p></div>`).join("");
- $("#stampCount").textContent=`${a.length} / ${total} スタンプ`;
- $("#stampProgress").style.width=`${total?a.length/total*100:0}%`;
- $("#completeBox").classList.toggle("hidden",a.length<total);
-}
-$("#stampList").onclick=e=>{if(e.target.dataset.h){$("#hint"+e.target.dataset.h).classList.toggle("hidden")}};
-$("#resetStamps").onclick=()=>{if(confirm("試作用スタンプをすべてリセットしますか？")){localStorage.removeItem(stampKey);renderStamps()}};
-const stampParam=Number(new URLSearchParams(location.search).get("stamp"));
-if(OFES_DATA.stamps.some(s=>s.id===stampParam)){const a=got();if(!a.includes(stampParam)){a.push(stampParam);save(a);setTimeout(()=>{showPage("stamp");alert(`STAMP ${stampParam} GET!`)},150)}}
-renderStamps();
-
-$("#movieList").innerHTML=OFES_DATA.movies.map(m=>`<article class="movie-card"><h3>${m.title}</h3><p>${m.description}</p><a href="${m.url}" ${m.url==="#"?'onclick="event.preventDefault();alert(\'data.js にYouTube URLを設定してください。\')"':'target="_blank" rel="noopener"'}>動画を見る</a></article>`).join("");
-
-$("#galleryGrid").innerHTML=OFES_DATA.posters.map((p,i)=>`<button class="poster" data-i="${i}"><img src="${p.src}" alt="${p.title}"><span>${p.title}</span></button>`).join("");
-$("#galleryGrid").onclick=e=>{const b=e.target.closest(".poster");if(!b)return;const p=OFES_DATA.posters[+b.dataset.i];$("#dialogImage").src=p.src;$("#dialogCaption").textContent=p.title;$("#imageDialog").showModal()};
-$("#closeDialog").onclick=()=>$("#imageDialog").close();$("#imageDialog").onclick=e=>{if(e.target===$("#imageDialog"))$("#imageDialog").close()};
+const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s),CFG="ofes-config-v02",STAMPS="ofes-stamps-v02";
+const clone=v=>JSON.parse(JSON.stringify(v));let data=loadConfig();
+function loadConfig(){try{return JSON.parse(localStorage.getItem(CFG))||clone(OFES_DEFAULT_DATA)}catch{return clone(OFES_DEFAULT_DATA)}}function saveConfig(){localStorage.setItem(CFG,JSON.stringify(data))}
+function showPage(id){$$('.page').forEach(x=>x.classList.remove('active'));$('#'+id).classList.add('active');scrollTo({top:0,behavior:'smooth'})}
+$$('.menu-card').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$$('.back').forEach(b=>b.onclick=()=>showPage('home'));$$('.back-home').forEach(b=>b.onclick=()=>showPage('home'));
+function mins(t){const [h,m]=(t||'00:00').split(':').map(Number);return h*60+m}function isoToday(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function placeName(id){return data.places.find(p=>p.id===id)?.name||'会場未設定'}function schedule(){return [...data.program].sort((a,b)=>mins(a.start)-mins(b.start))}
+function state(){const d=new Date(),n=d.getHours()*60+d.getMinutes(),event=isoToday()===data.eventDate,all=schedule();return{event,all,current:event?all.filter(p=>n>=mins(p.start)&&n<mins(p.end)):[],future:event?all.filter(p=>n<mins(p.start)):[],past:event?all.filter(p=>n>=mins(p.end)):[]}}
+function renderHome(){const s=state();$('#noticeText').textContent=data.notice||'';if(!s.event){$('#todaySummary').innerHTML=`<div class="summary-card summary-next"><b>${data.eventDate||'開催日未設定'}</b><br><small>開催日には「ただいま開催中」と「このあと」が自動表示されます。</small></div>`;return}let h=s.current.length?`<div class="summary-card"><small>ただいま開催中</small><br>${s.current.map(p=>`<b>${p.start}–${p.end} ${p.title}</b> ／ ${placeName(p.placeId)}`).join('<br>')}</div>`:`<div class="summary-card"><small>ただいま</small><br><b>開催中のプログラムはありません。</b></div>`;if(s.future[0])h+=`<div class="summary-card summary-next"><small>次のプログラム</small><br><b>${s.future[0].start} ${s.future[0].title}</b> ／ ${placeName(s.future[0].placeId)}</div>`;$('#todaySummary').innerHTML=h}
+function renderProgram(){const s=state();$('#programStatus').innerHTML=s.event?`<div class="status-block"><h3>ただいま開催中</h3>${s.current.length?`<ul>${s.current.map(p=>`<li><b>${p.start}–${p.end} ${p.title}</b> ／ ${placeName(p.placeId)}</li>`).join('')}</ul>`:'<p>現在開催中のプログラムはありません。</p>'}</div><div class="status-block"><h3>このあとのプログラム</h3>${s.future.length?`<ul>${s.future.slice(0,5).map(p=>`<li>${p.start} ${p.title} ／ ${placeName(p.placeId)}</li>`).join('')}</ul>`:'<p>本日のプログラムは終了しました。</p>'}</div>`:`<div class="status-block"><h3>開催日：${data.eventDate||'未設定'}</h3><p>開催日には現在時刻に合わせて自動表示します。</p></div>`;$('#programList').innerHTML=s.all.map(p=>{const c=s.current.some(x=>x.id===p.id),f=s.past.some(x=>x.id===p.id);return`<div class="program-item ${c?'current':''} ${f?'finished':''}"><div class="program-time">${p.start}</div><div><div class="program-title">${p.title}${c?'<span class="tag">開催中</span>':''}</div><div class="program-place">${placeName(p.placeId)} · ${p.start}–${p.end}</div></div></div>`}).join('')}
+function renderMap(){const s=state(),cur=new Set(s.current.map(p=>p.placeId)),next=new Set(s.future.slice(0,3).map(p=>p.placeId));$('#mapOverlay').innerHTML=data.places.map(p=>{let c='map-zone',label='';if(cur.has(p.id)){c+=' now';label=s.current.filter(x=>x.placeId===p.id).map(x=>x.title).join(' / ')}else if(next.has(p.id)){c+=' next';const n=s.future.find(x=>x.placeId===p.id);label=n?`${n.start} ${n.title}`:''}return`<div class="${c}" style="left:${p.x}%;top:${p.y}%;width:${p.w}%;height:${p.h}%">${label?`<span class="zone-label">${p.name}<br>${label}</span>`:''}</div>`}).join('');$('#mapStatus').innerHTML=!s.event?`<b>開催日：${data.eventDate||'未設定'}</b><br>開催日に、現在開催中の会場とこのあとの会場を強調表示します。`:s.current.length?`<b>現在開催中</b><br>${s.current.map(p=>`${p.title} → ${placeName(p.placeId)}`).join('<br>')}`:`<b>現在開催中のプログラムはありません。</b>${s.future[0]?`<br>次は ${s.future[0].start} ${s.future[0].title}（${placeName(s.future[0].placeId)}）です。`:''}`}
+function got(){try{return JSON.parse(localStorage.getItem(STAMPS)||'[]')}catch{return[]}}function put(a){localStorage.setItem(STAMPS,JSON.stringify([...new Set(a)]))}
+function renderStamps(){const a=got();$('#stampList').innerHTML=data.stamps.slice(0,5).map(s=>`<div class="stamp-card ${a.includes(s.id)?'got':''}"><div class="stamp-icon">⭐</div><h3>STAMP ${s.id}</h3><div>${a.includes(s.id)?'GET!':'未獲得'}</div><button class="hint-btn" data-h="${s.id}">ヒントを見る</button><p id="hint${s.id}" class="hint hidden">${s.hint||''}</p></div>`).join('');$('#stampCount').textContent=`${a.length} / 5 スタンプ`;$('#stampProgress').style.width=`${a.length/5*100}%`;$('#completeBox').classList.toggle('hidden',a.length<5)}
+$('#stampList').onclick=e=>{if(e.target.dataset.h)$('#hint'+e.target.dataset.h).classList.toggle('hidden')};$('#resetStamps').onclick=()=>{if(confirm('スタンプをリセットしますか？')){localStorage.removeItem(STAMPS);renderStamps()}};
+function renderMovies(){$('#movieList').innerHTML=data.movies.length?data.movies.map(m=>`<article class="movie-card"><h3>${m.title||'タイトル未設定'}</h3><p>${m.description||''}</p><a href="${m.url||'#'}" ${!m.url||m.url==='#'?`onclick="event.preventDefault();alert('動画URLが未設定です。')"`:'target="_blank" rel="noopener"'}>動画を見る</a></article>`).join(''):'<p>動画はまだ登録されていません。</p>'}
+function renderGallery(){$('#galleryGrid').innerHTML=data.posters.length?data.posters.map((p,i)=>`<button class="poster" data-i="${i}"><img src="${p.src}" alt="${p.title||'ポスター'}"><span>${p.title||'ポスター'}</span></button>`).join(''):'<p>ポスターはまだ登録されていません。</p>'}
+$('#galleryGrid').onclick=e=>{const b=e.target.closest('.poster');if(!b)return;const p=data.posters[+b.dataset.i];$('#dialogImage').src=p.src;$('#dialogCaption').textContent=p.title||'';$('#imageDialog').showModal()};$('#closeImageDialog').onclick=()=>$('#imageDialog').close();$('#imageDialog').onclick=e=>{if(e.target===$('#imageDialog'))$('#imageDialog').close()};
+function renderAll(){renderHome();renderProgram();renderMap();renderStamps();renderMovies();renderGallery()}renderAll();setInterval(()=>{renderHome();renderProgram();renderMap()},30000);
+const sp=Number(new URLSearchParams(location.search).get('stamp'));if(Number.isInteger(sp)&&sp>=1&&sp<=5){const a=got();if(!a.includes(sp)){a.push(sp);put(a);renderStamps();const s=data.stamps.find(x=>x.id===sp);setTimeout(()=>{showPage('stamp');alert(`STAMP ${sp} GET!\n${s?.message||''}`)},100)}}
+$('#adminOpenBtn').onclick=()=>{$('#loginPassword').value='';$('#loginError').textContent='';$('#loginDialog').showModal()};$('#loginCancel').onclick=()=>$('#loginDialog').close();$('#loginForm').onsubmit=e=>{e.preventDefault();if($('#loginPassword').value===data.adminPassword){$('#loginDialog').close();populateAdmin();showPage('admin')}else $('#loginError').textContent='パスワードが違います。'};$('#logoutAdmin').onclick=()=>showPage('home');
+$$('.admin-nav button').forEach(b=>b.onclick=()=>{$$('.admin-nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.admin-tab').forEach(x=>x.classList.remove('active'));$('#admin-'+b.dataset.adminTab).classList.add('active')});
+function esc(v){return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}function opts(sel){return data.places.map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>${p.name}</option>`).join('')}
+function populateAdmin(){$('#aYear').value=data.year||'';$('#aDate').value=data.eventDate||'';$('#aNotice').value=data.notice||'';$('#aPassword').value=data.adminPassword||'';renderAP();renderAS();renderAM();renderAG()}
+function renderAP(){$('#adminProgramRows').innerHTML=data.program.map((p,i)=>`<div class="admin-row" data-type="program"><label>開始<input class="p-start" type="time" value="${p.start||''}"></label><label>終了<input class="p-end" type="time" value="${p.end||''}"></label><label class="wide">発表名<input class="p-title" value="${esc(p.title||'')}"></label><label class="wide">会場<select class="p-place">${opts(p.placeId)}</select></label><div class="row-actions"><button class="remove-btn" data-rp="${i}">削除</button></div></div>`).join('')}
+function renderAS(){$('#adminStampRows').innerHTML=data.stamps.slice(0,5).map((s,i)=>`<div class="admin-row" data-type="stamp"><label>番号<input value="${i+1}" disabled></label><label class="wide">ヒント<input class="s-hint" value="${esc(s.hint||'')}"></label><label class="wide">獲得時メッセージ<input class="s-msg" value="${esc(s.message||'')}"></label></div>`).join('')}
+function renderAM(){$('#adminMovieRows').innerHTML=data.movies.map((m,i)=>`<div class="admin-row" data-type="movie"><label class="wide">タイトル<input class="m-title" value="${esc(m.title||'')}"></label><label class="wide">説明<input class="m-desc" value="${esc(m.description||'')}"></label><label class="wide">動画URL<input class="m-url" value="${esc(m.url||'')}"></label><div class="row-actions"><button class="remove-btn" data-rm="${i}">削除</button></div></div>`).join('')}
+function renderAG(){$('#adminPosterRows').innerHTML=data.posters.map((p,i)=>`<div class="admin-row" data-type="poster"><label class="wide">タイトル<input class="g-title" value="${esc(p.title||'')}"></label><label class="wide">画像パス / URL<input class="g-src" value="${esc(p.src||'')}"></label><div class="row-actions"><button class="remove-btn" data-rg="${i}">削除</button></div></div>`).join('')}
+function sync(){data.year=$('#aYear').value;data.eventDate=$('#aDate').value;data.notice=$('#aNotice').value;data.adminPassword=$('#aPassword').value||data.adminPassword;data.program=[...$$('[data-type=program]')].map((r,i)=>({id:data.program[i]?.id||Date.now()+i,start:r.querySelector('.p-start').value,end:r.querySelector('.p-end').value,title:r.querySelector('.p-title').value,placeId:r.querySelector('.p-place').value}));data.stamps=[...$$('[data-type=stamp]')].map((r,i)=>({id:i+1,hint:r.querySelector('.s-hint').value,message:r.querySelector('.s-msg').value}));data.movies=[...$$('[data-type=movie]')].map(r=>({title:r.querySelector('.m-title').value,description:r.querySelector('.m-desc').value,url:r.querySelector('.m-url').value}));data.posters=[...$$('[data-type=poster]')].map(r=>({title:r.querySelector('.g-title').value,src:r.querySelector('.g-src').value}))}
+$('#addProgram').onclick=()=>{sync();data.program.push({id:Date.now(),start:'12:00',end:'12:30',title:'新しいプログラム',placeId:data.places[0].id});renderAP()};$('#addMovie').onclick=()=>{sync();data.movies.push({title:'新しい動画',description:'',url:'#'});renderAM()};$('#addPoster').onclick=()=>{sync();data.posters.push({title:'新しいポスター',src:'images/poster01.svg'});renderAG()};document.addEventListener('click',e=>{if(e.target.dataset.rp!==undefined){sync();data.program.splice(+e.target.dataset.rp,1);renderAP()}if(e.target.dataset.rm!==undefined){sync();data.movies.splice(+e.target.dataset.rm,1);renderAM()}if(e.target.dataset.rg!==undefined){sync();data.posters.splice(+e.target.dataset.rg,1);renderAG()}});
+$('#saveAdmin').onclick=()=>{sync();saveConfig();renderAll();alert('このブラウザに設定を保存しました。')};$('#exportData').onclick=()=>{sync();const b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`OFES_${data.year||'settings'}.json`;a.click();URL.revokeObjectURL(a.href)};$('#importData').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{data=JSON.parse(await f.text());saveConfig();populateAdmin();renderAll();alert('設定を読み込みました。')}catch{alert('JSONを読み込めませんでした。')}e.target.value=''};$('#resetData').onclick=()=>{if(confirm('初期設定に戻しますか？')){data=clone(OFES_DEFAULT_DATA);saveConfig();populateAdmin();renderAll()}};

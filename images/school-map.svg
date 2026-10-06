@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750" viewBox="0 0 1200 750">
+<rect width="1200" height="750" fill="#f4f3ee"/>
+<text x="600" y="48" text-anchor="middle" font-family="sans-serif" font-size="30" font-weight="bold" fill="#333">校内配置図（試作用）</text>
+<rect x="60" y="430" width="350" height="230" rx="24" fill="#fff" stroke="#555" stroke-width="5"/><text x="235" y="555" text-anchor="middle" font-family="sans-serif" font-size="38" font-weight="bold" fill="#444">体育館</text>
+<rect x="485" y="125" width="285" height="535" rx="20" fill="#fff" stroke="#555" stroke-width="5"/><line x1="485" y1="303" x2="770" y2="303" stroke="#999" stroke-width="3"/><line x1="485" y1="481" x2="770" y2="481" stroke="#999" stroke-width="3"/><text x="627" y="215" text-anchor="middle" font-family="sans-serif" font-size="30" fill="#444">前期棟 2階</text><text x="627" y="570" text-anchor="middle" font-family="sans-serif" font-size="30" fill="#444">前期棟 1階</text>
+<rect x="825" y="90" width="315" height="570" rx="20" fill="#fff" stroke="#555" stroke-width="5"/><line x1="825" y1="280" x2="1140" y2="280" stroke="#999" stroke-width="3"/><line x1="825" y1="470" x2="1140" y2="470" stroke="#999" stroke-width="3"/><text x="982" y="185" text-anchor="middle" font-family="sans-serif" font-size="30" fill="#444">後期棟 3階</text><text x="982" y="375" text-anchor="middle" font-family="sans-serif" font-size="30" fill="#444">後期棟 2階</text><text x="982" y="565" text-anchor="middle" font-family="sans-serif" font-size="30" fill="#444">後期棟 1階</text>
+<path d="M420 545 H470" stroke="#999" stroke-width="8" stroke-linecap="round"/><path d="M780 545 H815" stroke="#999" stroke-width="8" stroke-linecap="round"/>
+</svg>

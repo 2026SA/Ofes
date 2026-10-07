@@ -1,34 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820">
-<rect width="1200" height="820" fill="#faf9f5"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+<rect width="1400" height="900" fill="#fbfaf6"/>
 <style>
-.t{font-family:"Noto Sans JP",sans-serif;fill:#242424}
-.h{font-size:34px;font-weight:700}.m{font-size:26px;font-weight:700}.s{font-size:20px}
-.b{fill:#fff;stroke:#555;stroke-width:4}.g{fill:#e9f1e5;stroke:#4d6f42;stroke-width:5}
-.p{fill:#f3eee5;stroke:#8b7a5d;stroke-width:4}.road{fill:none;stroke:#c9c7bf;stroke-width:20;stroke-linecap:round}
+.t{font-family:"Noto Sans JP","Yu Gothic",sans-serif;fill:#202020}
+.h{font-size:38px;font-weight:800} .s{font-size:19px;fill:#666} .r{font-size:19px;font-weight:650}
+.room{fill:#fff;stroke:#333;stroke-width:3} .special{fill:#eef5ea;stroke:#45653d;stroke-width:3}
+.corr{fill:#f0eee7;stroke:#777;stroke-width:2} .deck{fill:#f5f3ed;stroke:#777;stroke-width:2;stroke-dasharray:8 5}
 </style>
-<text x="600" y="55" text-anchor="middle" class="t h">大豊学園　校内案内（概略図）</text>
-<text x="600" y="86" text-anchor="middle" class="t s">※来場者向けの簡略図です。縮尺・細部は省略しています。</text>
-
-<rect x="130" y="120" width="940" height="135" rx="22" class="p"/>
-<text x="600" y="180" text-anchor="middle" class="t m">駐車場</text>
-<text x="600" y="215" text-anchor="middle" class="t s">来場者用・教職員用の区画は当日の案内に従ってください</text>
-
-<path d="M600 255 V330 M360 330 H835" class="road"/>
-
-<rect x="170" y="320" width="360" height="190" rx="24" class="g"/>
-<text x="350" y="405" text-anchor="middle" class="t m">後期課程棟</text>
-<text x="350" y="442" text-anchor="middle" class="t s">1F・2F・3F</text>
-
-<rect x="665" y="320" width="360" height="235" rx="24" class="g"/>
-<text x="845" y="420" text-anchor="middle" class="t m">前期課程棟</text>
-<text x="845" y="457" text-anchor="middle" class="t s">1F・2F</text>
-
-<rect x="400" y="590" width="400" height="170" rx="22" class="b"/>
-<text x="600" y="675" text-anchor="middle" class="t m">体育館</text>
-<text x="600" y="712" text-anchor="middle" class="t s">ステージ発表・全体行事</text>
-
-<path d="M600 520 V590" class="road"/>
-<text x="95" y="465" text-anchor="middle" class="t s">← 正門</text>
-<path d="M115 455 H165" stroke="#555" stroke-width="4" marker-end="url(#a)"/>
-<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#555"/></marker></defs>
-</svg>
+<text x="700" y="52" text-anchor="middle" class="t h">大豊学園　校内全体案内</text>
+<text x="700" y="82" text-anchor="middle" class="t s">個人名・詳細な室内情報を省いた来場者向け概略図</text><path d="M130 120 H1260 V780 H130 Z" fill="none" stroke="#888" stroke-width="4"/><rect x="150" y="150" width="1080" height="115" class="deck"/><text x="690.0" y="214.5" text-anchor="middle" class="t r" font-size="19">駐車場</text><rect x="160" y="340" width="430" height="190" class="special"/><text x="375.0" y="442.0" text-anchor="middle" class="t r" font-size="19">後期課程棟</text><rect x="700" y="320" width="470" height="230" class="special"/><text x="935.0" y="442.0" text-anchor="middle" class="t r" font-size="19">前期課程棟</text><rect x="485" y="590" width="420" height="200" class="special"/><text x="695.0" y="697.0" text-anchor="middle" class="t r" font-size="19">体育館</text><path d="M130 455 H160 M590 435 H700 M695 550 V590" stroke="#aaa" stroke-width="30" fill="none"/><text x="90" y="465" class="t r">正門 →</text><text x="700" y="840" text-anchor="middle" class="t s">※駐車位置・入退場経路は当日の案内に従ってください。</text></svg>

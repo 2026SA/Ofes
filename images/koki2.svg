@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
-<rect width="1200" height="720" fill="#faf9f5"/>
-<style>.t{font-family:"Noto Sans JP",sans-serif;fill:#222}.h{font-size:36px;font-weight:700}.m{font-size:25px;font-weight:700}.c{fill:#edf4e9;stroke:#56764b;stroke-width:4}.s{font-size:19px}</style>
-<text x="600" y="55" text-anchor="middle" class="t h">後期課程棟 2F（案内図）</text>
-<text x="600" y="86" text-anchor="middle" class="t s">発表・展示に使う主な場所を中心に表示</text>
-<rect x="90" y="170" width="280" height="190" rx="18" class="c"/><text x="230" y="275" text-anchor="middle" class="t m">理科室</text>
-<rect x="425" y="170" width="230" height="190" rx="18" class="c"/><text x="540" y="275" text-anchor="middle" class="t m">9年生</text>
-<rect x="705" y="170" width="230" height="190" rx="18" class="c"/><text x="820" y="275" text-anchor="middle" class="t m">8年生</text>
-<rect x="425" y="420" width="230" height="150" rx="18" class="c"/><text x="540" y="510" text-anchor="middle" class="t m">English Cafe</text>
-<rect x="705" y="420" width="230" height="150" rx="18" fill="#fff" stroke="#666" stroke-width="4"/><text x="820" y="510" text-anchor="middle" class="t m">ベランダ</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+<rect width="1400" height="900" fill="#fbfaf6"/>
+<style>
+.t{font-family:"Noto Sans JP","Yu Gothic",sans-serif;fill:#202020}
+.h{font-size:38px;font-weight:800} .s{font-size:19px;fill:#666} .r{font-size:19px;font-weight:650}
+.room{fill:#fff;stroke:#333;stroke-width:3} .special{fill:#eef5ea;stroke:#45653d;stroke-width:3}
+.corr{fill:#f0eee7;stroke:#777;stroke-width:2} .deck{fill:#f5f3ed;stroke:#777;stroke-width:2;stroke-dasharray:8 5}
+</style>
+<text x="700" y="52" text-anchor="middle" class="t h">後期課程棟 2F</text>
+<text x="700" y="82" text-anchor="middle" class="t s">教室・特別教室・通路を含むフロア全体の案内図</text><rect x="80" y="175" width="100" height="150" class="room"/><text x="130.0" y="257.0" text-anchor="middle" class="t r" font-size="15">暗室</text><rect x="180" y="175" width="120" height="150" class="room"/><text x="240.0" y="257.0" text-anchor="middle" class="t r" font-size="15">準備室</text><rect x="300" y="175" width="115" height="150" class="room"/><text x="357.5" y="257.0" text-anchor="middle" class="t r" font-size="15">サポート<br/>ルーム</text><rect x="415" y="175" width="115" height="150" class="room"/><text x="472.5" y="257.0" text-anchor="middle" class="t r" font-size="15">資料室</text><rect x="530" y="175" width="115" height="150" class="room"/><text x="587.5" y="257.0" text-anchor="middle" class="t r" font-size="15">ひまわり</text><rect x="645" y="175" width="115" height="150" class="room"/><text x="702.5" y="257.0" text-anchor="middle" class="t r" font-size="15">ひまわり</text><rect x="760" y="175" width="145" height="150" class="room"/><text x="832.5" y="257.0" text-anchor="middle" class="t r" font-size="15">児童・<br/>生徒会室</text><rect x="905" y="175" width="180" height="150" class="special"/><text x="995.0" y="257.0" text-anchor="middle" class="t r" font-size="15">9年生</text><rect x="1085" y="175" width="180" height="150" class="special"/><text x="1175.0" y="257.0" text-anchor="middle" class="t r" font-size="15">8年生</text><rect x="1265" y="175" width="110" height="150" class="room"/><text x="1320.0" y="257.0" text-anchor="middle" class="t r" font-size="15">トイレ</text><rect x="80" y="325" width="1210" height="70" class="corr"/><text x="685" y="368" text-anchor="middle" class="t s">ベランダ・通路</text><rect x="80" y="395" width="320" height="230" class="special"/><text x="240.0" y="517.0" text-anchor="middle" class="t r" font-size="19">理科室</text><rect x="460" y="430" width="210" height="120" class="special"/><text x="565.0" y="497.0" text-anchor="middle" class="t r" font-size="19">English Cafe</text><rect x="1130" y="500" width="160" height="120" class="special"/><text x="1210.0" y="567.0" text-anchor="middle" class="t r" font-size="19">技術室</text></svg>

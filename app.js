@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
-const ADMIN_PASSWORD="ofes2026";
+const ADMIN_PASSWORD="ofes0034";
 const CONFIG_KEY="ofes-config-v05", STAMP_KEY="ofes-stamps-v05";
 let data=JSON.parse(JSON.stringify(OFES_DEFAULT_DATA));
 let selectedMapId="campus";
@@ -86,17 +86,39 @@ const stampParam=Number(new URLSearchParams(location.search).get("stamp"));if(st
 $("#adminOpenBtn").onclick=()=>{$("#loginPassword").value="";$("#loginError").textContent="";$("#loginDialog").showModal()};$("#loginCancel").onclick=()=>$("#loginDialog").close();$("#loginForm").onsubmit=e=>{e.preventDefault();if($("#loginPassword").value===ADMIN_PASSWORD){$("#loginDialog").close();populateAdmin();showPage("admin")}else $("#loginError").textContent="パスワードが違います。"};
 $("#logoutAdmin").onclick=()=>showPage("home");$$(".admin-nav button").forEach(b=>b.onclick=()=>{$$(".admin-nav button").forEach(x=>x.classList.remove("active"));b.classList.add("active");$$(".admin-tab").forEach(x=>x.classList.remove("active"));$("#admin-"+b.dataset.adminTab).classList.add("active")});
 function roomOptions(sel){return data.rooms.map(r=>`<option value="${r.id}" ${r.id===sel?"selected":""}>${esc(r.name)}</option>`).join("")}
-function populateAdmin(){$("#aYear").value=data.year;$("#aDate").value=data.eventDate;$("#aNotice").value=data.notice;$("#aPreviewEnabled").checked=!!data.previewEnabled;$("#aPreviewDateTime").value=data.previewDateTime||"";renderAdminPrograms();renderAdminStamps();renderAdminMovies();renderAdminPosters()}
+function populateAdmin(){$("#aYear").value=data.year;$("#aDate").value=data.eventDate;$("#aNotice").value=data.notice;$("#aPreviewEnabled").checked=!!data.previewEnabled;{
+  const pv=(data.previewDateTime||`${data.eventDate}T09:25`).split("T");
+  $("#aPreviewDate").value=pv[0]||data.eventDate;
+  $("#aPreviewTime").value=(pv[1]||"09:25").slice(0,5);
+  const [hh,mm]=($("#aPreviewTime").value||"09:25").split(":").map(Number);
+  $("#aPreviewRange").value=hh*60+mm;
+  $("#aPreviewClockLabel").textContent=$("#aPreviewTime").value;
+}renderAdminPrograms();renderAdminStamps();renderAdminMovies();renderAdminPosters()}
 function renderAdminPrograms(){$("#adminProgramRows").innerHTML=data.program.map((p,i)=>`<div class="admin-row" data-type="program"><label>開始<input class="p-start" type="time" value="${p.start}"></label><label>終了<input class="p-end" type="time" value="${p.end}"></label><label class="wide">内容<input class="p-title" value="${attr(p.title)}"></label><label class="wide">場所<select class="p-room">${roomOptions(p.roomId)}</select></label><div class="row-actions"><button class="move-btn" data-up="${i}">↑</button><button class="move-btn" data-down="${i}">↓</button><button class="remove-btn" data-rp="${i}">削除</button></div></div>`).join("")}
 function renderAdminStamps(){$("#adminStampRows").innerHTML=data.stamps.map((s,i)=>`<div class="admin-row" data-type="stamp"><label>番号<input value="${s.id}" disabled></label><label class="wide">ヒント<input class="s-hint" value="${attr(s.hint)}"></label><label class="wide">獲得時メッセージ<input class="s-msg" value="${attr(s.message)}"></label></div>`).join("")}
 function renderAdminMovies(){$("#adminMovieRows").innerHTML=data.movies.map((m,i)=>`<div class="admin-row" data-type="movie"><label class="wide">タイトル<input class="m-title" value="${attr(m.title)}"></label><label class="wide">説明<input class="m-desc" value="${attr(m.description||"")}"></label><label class="wide">URL<input class="m-url" value="${attr(m.url||"")}"></label><div class="row-actions"><button class="remove-btn" data-rm="${i}">削除</button></div></div>`).join("")}
 function renderAdminPosters(){$("#adminPosterRows").innerHTML=data.posters.map((p,i)=>`<div class="admin-row"><label class="wide">タイトル<input value="${attr(p.title)}" disabled></label><label class="wide">画像URL<input value="${attr(p.src)}" disabled></label><div class="row-actions"><button class="remove-btn" data-rg="${i}">削除</button></div></div>`).join("")}
-function syncAdmin(){data.year=$("#aYear").value;data.eventDate=$("#aDate").value;data.notice=$("#aNotice").value;data.previewEnabled=$("#aPreviewEnabled").checked;data.previewDateTime=$("#aPreviewDateTime").value;data.program=[...$$('[data-type="program"]')].map((r,i)=>({id:data.program[i]?.id||Date.now()+i,start:r.querySelector(".p-start").value,end:r.querySelector(".p-end").value,title:r.querySelector(".p-title").value,roomId:r.querySelector(".p-room").value}));data.stamps=[...$$('[data-type="stamp"]')].map((r,i)=>({id:i+1,hint:r.querySelector(".s-hint").value,message:r.querySelector(".s-msg").value}));data.movies=[...$$('[data-type="movie"]')].map(r=>({title:r.querySelector(".m-title").value,description:r.querySelector(".m-desc").value,url:r.querySelector(".m-url").value}))}
+function syncAdmin(){data.year=$("#aYear").value;data.eventDate=$("#aDate").value;data.notice=$("#aNotice").value;data.previewEnabled=$("#aPreviewEnabled").checked;data.previewDateTime=($("#aPreviewDate").value||data.eventDate)+"T"+($("#aPreviewTime").value||"09:25");data.program=[...$$('[data-type="program"]')].map((r,i)=>({id:data.program[i]?.id||Date.now()+i,start:r.querySelector(".p-start").value,end:r.querySelector(".p-end").value,title:r.querySelector(".p-title").value,roomId:r.querySelector(".p-room").value}));data.stamps=[...$$('[data-type="stamp"]')].map((r,i)=>({id:i+1,hint:r.querySelector(".s-hint").value,message:r.querySelector(".s-msg").value}));data.movies=[...$$('[data-type="movie"]')].map(r=>({title:r.querySelector(".m-title").value,description:r.querySelector(".m-desc").value,url:r.querySelector(".m-url").value}))}
 $("#saveAdmin").onclick=async()=>{syncAdmin();await saveConfig();renderAll();alert(firebaseReady?"Firebaseへ保存しました。":"この端末に保存しました。")};
 $("#addProgram").onclick=()=>{syncAdmin();data.program.push({id:Date.now(),start:"15:00",end:"15:10",title:"新しいプログラム",roomId:"gym"});renderAdminPrograms()};$("#addMovie").onclick=()=>{syncAdmin();data.movies.push({title:"新しい動画",description:"",url:"#"});renderAdminMovies()};
-document.addEventListener("click",e=>{if(e.target.dataset.testTime){$("#aPreviewEnabled").checked=true;$("#aPreviewDateTime").value=e.target.dataset.testTime}
+document.addEventListener("click",e=>{if(e.target.dataset.testMinute!==undefined){
+  $("#aPreviewEnabled").checked=true;
+  const n=+e.target.dataset.testMinute, h=String(Math.floor(n/60)).padStart(2,"0"), m=String(n%60).padStart(2,"0");
+  $("#aPreviewTime").value=`${h}:${m}`; $("#aPreviewRange").value=n; $("#aPreviewClockLabel").textContent=`${h}:${m}`;
+}
 if(e.target.dataset.rp!==undefined){syncAdmin();data.program.splice(+e.target.dataset.rp,1);renderAdminPrograms()}if(e.target.dataset.rm!==undefined){syncAdmin();data.movies.splice(+e.target.dataset.rm,1);renderAdminMovies()}if(e.target.dataset.rg!==undefined){data.posters.splice(+e.target.dataset.rg,1);renderAdminPosters()}if(e.target.dataset.up!==undefined){syncAdmin();let i=+e.target.dataset.up;if(i>0)[data.program[i-1],data.program[i]]=[data.program[i],data.program[i-1]];renderAdminPrograms()}if(e.target.dataset.down!==undefined){syncAdmin();let i=+e.target.dataset.down;if(i<data.program.length-1)[data.program[i+1],data.program[i]]=[data.program[i],data.program[i+1]];renderAdminPrograms()}});
 $("#uploadPoster").onclick=async()=>{const f=$("#posterUploadFile").files[0],title=$("#posterUploadTitle").value||f?.name;if(!f){$("#uploadStatus").textContent="画像ファイルを選択してください。";return}if(!firebaseReady){$("#uploadStatus").textContent="Firebase未設定です。firebase-config.js を設定してください。";return}try{$("#uploadStatus").textContent="アップロード中…";const ref=storage.ref().child(`ofes/posters/${data.year}/${Date.now()}_${f.name}`);await ref.put(f);const url=await ref.getDownloadURL();data.posters.push({title,src:url});await saveConfig();renderAdminPosters();renderGallery();$("#posterUploadFile").value="";$("#posterUploadTitle").value="";$("#uploadStatus").textContent="アップロードしました。"}catch(e){console.error(e);$("#uploadStatus").textContent="アップロードに失敗しました。Firebase設定・権限を確認してください。"}};
 $("#exportData").onclick=()=>{syncAdmin();const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`OFES_${data.year}.json`;a.click()};$("#importData").onchange=async e=>{try{data=JSON.parse(await e.target.files[0].text());await saveConfig();populateAdmin();renderAll()}catch{alert("読み込めませんでした。")}};$("#resetData").onclick=async()=>{if(confirm("初期設定に戻しますか？")){data=JSON.parse(JSON.stringify(OFES_DEFAULT_DATA));await saveConfig();populateAdmin();renderAll()}};
+
+function syncPreviewControlsFromRange(){
+ const n=+$("#aPreviewRange").value,h=String(Math.floor(n/60)).padStart(2,"0"),m=String(n%60).padStart(2,"0");
+ $("#aPreviewTime").value=`${h}:${m}`; $("#aPreviewClockLabel").textContent=`${h}:${m}`;
+ data.previewEnabled=$("#aPreviewEnabled").checked; data.previewDateTime=($("#aPreviewDate").value||data.eventDate)+`T${h}:${m}`;
+ renderAll();
+}
+$("#aPreviewRange").addEventListener("input",syncPreviewControlsFromRange);
+$("#aPreviewTime").addEventListener("input",()=>{const [h,m]=($("#aPreviewTime").value||"00:00").split(":").map(Number);$("#aPreviewRange").value=h*60+m;$("#aPreviewClockLabel").textContent=$("#aPreviewTime").value;syncPreviewControlsFromRange()});
+$("#aPreviewDate").addEventListener("change",syncPreviewControlsFromRange);
+$("#aPreviewEnabled").addEventListener("change",syncPreviewControlsFromRange);
 
 initBackend(); setInterval(()=>{renderHome();renderProgram();renderMap()},30000);

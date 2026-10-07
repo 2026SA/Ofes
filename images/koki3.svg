@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
-<rect width="1200" height="720" fill="#faf9f5"/>
-<style>.t{font-family:"Noto Sans JP",sans-serif;fill:#222}.h{font-size:36px;font-weight:700}.m{font-size:25px;font-weight:700}.c{fill:#edf4e9;stroke:#56764b;stroke-width:4}.s{font-size:19px}</style>
-<text x="600" y="55" text-anchor="middle" class="t h">後期課程棟 3F（案内図）</text>
-<text x="600" y="86" text-anchor="middle" class="t s">展示・体験で利用する主な特別教室</text>
-<rect x="70" y="180" width="200" height="180" rx="18" class="c"/><text x="170" y="280" text-anchor="middle" class="t m">音楽室</text>
-<rect x="310" y="180" width="200" height="180" rx="18" class="c"/><text x="410" y="280" text-anchor="middle" class="t m">美術室</text>
-<rect x="550" y="180" width="200" height="180" rx="18" class="c"/><text x="650" y="280" text-anchor="middle" class="t m">被服室</text>
-<rect x="790" y="180" width="200" height="180" rx="18" class="c"/><text x="890" y="280" text-anchor="middle" class="t m">パソコン室</text>
-<rect x="430" y="430" width="340" height="160" rx="18" class="c"/><text x="600" y="525" text-anchor="middle" class="t m">多目的室</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+<rect width="1400" height="900" fill="#fbfaf6"/>
+<style>
+.t{font-family:"Noto Sans JP","Yu Gothic",sans-serif;fill:#202020}
+.h{font-size:38px;font-weight:800} .s{font-size:19px;fill:#666} .r{font-size:19px;font-weight:650}
+.room{fill:#fff;stroke:#333;stroke-width:3} .special{fill:#eef5ea;stroke:#45653d;stroke-width:3}
+.corr{fill:#f0eee7;stroke:#777;stroke-width:2} .deck{fill:#f5f3ed;stroke:#777;stroke-width:2;stroke-dasharray:8 5}
+</style>
+<text x="700" y="52" text-anchor="middle" class="t h">後期課程棟 3F</text>
+<text x="700" y="82" text-anchor="middle" class="t s">各教室とベランダ・通路の位置関係を表示</text><rect x="120" y="180" width="130" height="180" class="room"/><text x="185.0" y="277.0" text-anchor="middle" class="t r" font-size="19">準備室</text><rect x="250" y="180" width="190" height="180" class="special"/><text x="345.0" y="277.0" text-anchor="middle" class="t r" font-size="19">美術室</text><rect x="440" y="180" width="190" height="180" class="special"/><text x="535.0" y="277.0" text-anchor="middle" class="t r" font-size="19">被服室</text><rect x="630" y="180" width="240" height="180" class="special"/><text x="750.0" y="277.0" text-anchor="middle" class="t r" font-size="19">パソコン室</text><rect x="870" y="180" width="220" height="180" class="special"/><text x="980.0" y="277.0" text-anchor="middle" class="t r" font-size="19">多目的室</text><rect x="1090" y="180" width="110" height="180" class="room"/><text x="1145.0" y="277.0" text-anchor="middle" class="t r" font-size="19">トイレ</text><rect x="120" y="360" width="1080" height="75" class="corr"/><text x="660" y="407" text-anchor="middle" class="t s">ベランダ・通路</text><rect x="40" y="435" width="250" height="200" class="special"/><text x="165.0" y="542.0" text-anchor="middle" class="t r" font-size="19">音楽室</text><rect x="40" y="635" width="250" height="70" class="deck"/><text x="165.0" y="677.0" text-anchor="middle" class="t r" font-size="19">ベランダ</text></svg>

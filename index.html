@@ -10,156 +10,141 @@
 <body>
 <header class="hero">
   <div class="hero-inner">
-    <img src="images/ofes-logo.svg" alt="OFES logo" class="hero-logo">
-    <div class="badge">OTOYO FESTIVAL</div>
-    <h1>OFES</h1>
+    <img src="images/ofes-logo.svg" alt="OFES" class="hero-logo">
     <p class="jp-title">おおフェス</p>
     <p class="lead">文化発表会をもっと楽しもう！</p>
+    <div id="testBadge" class="test-badge hidden">TEST MODE</div>
     <div id="todaySummary" class="today-summary"></div>
   </div>
 </header>
 
 <main>
-  <section id="home" class="page active">
-    <div class="menu-grid">
-      <button class="menu-card" data-page="program"><span>📅</span><b>PROGRAM</b><small>今日のプログラム</small></button>
-      <button class="menu-card" data-page="map"><span>🗺️</span><b>MAP</b><small>校内案内・現在開催中</small></button>
-      <button class="menu-card" data-page="stamp"><span>⭐</span><b>STAMP RALLY</b><small>5つのスタンプを集めよう</small></button>
-      <button class="menu-card" data-page="movie"><span>▶️</span><b>MOVIE</b><small>動画を見る</small></button>
-      <button class="menu-card" data-page="gallery"><span>🖼️</span><b>GALLERY</b><small>ポスターを見る</small></button>
+<section id="home" class="page active">
+  <div class="menu-grid">
+    <button class="menu-card" data-page="program"><span>📅</span><b>PROGRAM</b><small>今日のプログラム</small></button>
+    <button class="menu-card" data-page="map"><span>🗺️</span><b>MAP</b><small>校内案内・開催中の場所</small></button>
+    <button class="menu-card" data-page="stamp"><span>⭐</span><b>STAMP RALLY</b><small>5つ集めよう</small></button>
+    <button class="menu-card" data-page="movie"><span>▶️</span><b>MOVIE</b><small>動画を見る</small></button>
+    <button class="menu-card" data-page="gallery"><span>🖼️</span><b>GALLERY</b><small>ポスターを見る</small></button>
+  </div>
+  <div class="notice"><h2>お知らせ</h2><p id="noticeText"></p></div>
+  <div id="firebaseState" class="firebase-state"></div>
+  <button id="adminOpenBtn" class="admin-open">⚙ 管理者</button>
+</section>
+
+<section id="program" class="page">
+  <div class="section-head"><button class="back">←</button><div><h2>PROGRAM</h2><p>現在時刻に合わせて自動表示</p></div></div>
+  <div id="programStatus"></div><h3>全プログラム</h3><div id="programList"></div>
+</section>
+
+<section id="map" class="page">
+  <div class="section-head"><button class="back">←</button><div><h2>MAP</h2><p>来場者向けの簡略案内図</p></div></div>
+  <div id="mapStatus" class="panel"></div>
+  <div id="mapTabs" class="floor-tabs"></div>
+  <div class="map-wrap"><img id="mapImage" class="map-image" alt="校内案内図"><div id="mapOverlay"></div></div>
+  <div class="map-legend"><span><i class="legend-now"></i>現在開催中</span><span><i class="legend-next"></i>このあと</span></div>
+  <p class="small-note">防犯上、来場者に必要な範囲に絞った概略図です。</p>
+</section>
+
+<section id="stamp" class="page">
+  <div class="section-head"><button class="back">←</button><div><h2>STAMP RALLY</h2><p>見てほしい場所を探そう！</p></div></div>
+  <div class="progress-wrap"><div id="stampProgress" class="progress"></div></div>
+  <p id="stampCount" class="center"></p><div id="stampList" class="stamp-grid"></div>
+  <div id="completeBox" class="complete hidden">🎉 COMPLETE!<small>5つ全部のスタンプを見つけました！</small></div>
+  <button id="resetStamps" class="text-btn">試作用：スタンプをリセット</button>
+</section>
+
+<section id="movie" class="page">
+  <div class="section-head"><button class="back">←</button><div><h2>MOVIE</h2><p>動画を見る</p></div></div>
+  <div id="movieList" class="card-list"></div>
+</section>
+
+<section id="gallery" class="page">
+  <div class="section-head"><button class="back">←</button><div><h2>GALLERY</h2><p>ポスターを見る</p></div></div>
+  <div id="galleryGrid" class="gallery-grid"></div>
+</section>
+
+<section id="admin" class="page">
+  <div class="section-head"><button class="back-home">←</button><div><h2>ADMIN</h2><p>OFES 管理者画面</p></div></div>
+  <div class="admin-nav">
+    <button data-admin-tab="basic" class="active">基本</button>
+    <button data-admin-tab="programs">プログラム</button>
+    <button data-admin-tab="stamps">スタンプ</button>
+    <button data-admin-tab="movies">動画</button>
+    <button data-admin-tab="posters">ポスター</button>
+    <button data-admin-tab="data">データ</button>
+  </div>
+
+  <div id="admin-basic" class="admin-tab active">
+    <div class="form-card">
+      <label>年度<input id="aYear" type="text"></label>
+      <label>開催日<input id="aDate" type="date"></label>
+      <label>お知らせ<textarea id="aNotice" rows="3"></textarea></label>
+      <div class="fixed-password">管理者パスワード：<b>固定（全年度共通）</b></div>
     </div>
-    <div class="notice"><h2>お知らせ</h2><p id="noticeText"></p></div>
-    <button id="adminOpenBtn" class="admin-open">⚙ 管理者</button>
-  </section>
-
-  <section id="program" class="page">
-    <div class="section-head"><button class="back">←</button><div><h2>PROGRAM</h2><p>現在時刻に合わせて自動表示</p></div></div>
-    <div id="programStatus"></div>
-    <h3>全プログラム</h3>
-    <div id="programList"></div>
-  </section>
-
-  <section id="map" class="page">
-    <div class="section-head"><button class="back">←</button><div><h2>MAP</h2><p>校内案内・現在開催中の場所</p></div></div>
-    <div id="mapStatus" class="panel"></div>
-    <div id="mapTabs" class="floor-tabs"></div>
-    <div class="map-wrap">
-      <img id="mapImage" class="map-image" alt="校内配置図">
-      <div id="mapOverlay"></div>
-    </div>
-    <div class="map-legend">
-      <span><i class="legend-now"></i>現在開催中</span>
-      <span><i class="legend-next"></i>このあと</span>
-    </div>
-    <div id="unmappedActivities" class="panel hidden"></div>
-    <p class="small-note">教室名は前回データを優先して反映しています。教職員駐車場と校内全体図を追加しました。</p>
-  </section>
-
-  <section id="stamp" class="page">
-    <div class="section-head"><button class="back">←</button><div><h2>STAMP RALLY</h2><p>5か所の「見てほしい場所」を探そう！</p></div></div>
-    <div class="progress-wrap"><div id="stampProgress" class="progress"></div></div>
-    <p id="stampCount" class="center"></p>
-    <div id="stampList" class="stamp-grid"></div>
-    <div id="completeBox" class="complete hidden">🎉 COMPLETE!<small>5つ全部のスタンプを見つけました！</small></div>
-    <button id="resetStamps" class="text-btn">試作用：スタンプをリセット</button>
-  </section>
-
-  <section id="movie" class="page">
-    <div class="section-head"><button class="back">←</button><div><h2>MOVIE</h2><p>動画を見る</p></div></div>
-    <div id="movieList" class="card-list"></div>
-  </section>
-
-  <section id="gallery" class="page">
-    <div class="section-head"><button class="back">←</button><div><h2>GALLERY</h2><p>ポスターを見る</p></div></div>
-    <div id="galleryGrid" class="gallery-grid"></div>
-  </section>
-
-  <section id="admin" class="page">
-    <div class="section-head"><button class="back-home">←</button><div><h2>ADMIN</h2><p>OFES 管理者画面</p></div></div>
-    <div class="admin-nav">
-      <button data-admin-tab="basic" class="active">基本</button>
-      <button data-admin-tab="programs">プログラム</button>
-      <button data-admin-tab="stamps">スタンプ</button>
-      <button data-admin-tab="movies">動画</button>
-      <button data-admin-tab="posters">ポスター</button>
-      <button data-admin-tab="data">データ</button>
-    </div>
-
-    <div id="admin-basic" class="admin-tab active">
-      <div class="form-card">
-        <label>年度<input id="aYear" type="text"></label>
-        <label>開催日<input id="aDate" type="date"></label>
-        <label>お知らせ<textarea id="aNotice" rows="3"></textarea></label>
-        <label>管理者パスワード<input id="aPassword" type="password"></label>
-      </div>
-      <div class="form-card">
-        <h3>時刻表示のテスト</h3>
-        <label class="check-row"><input id="aPreviewEnabled" type="checkbox"> テスト用日時を使う</label>
-        <label>テスト用日時<input id="aPreviewDateTime" type="datetime-local"></label>
-        <p class="small-note">ONにすると、当日を待たずに「開催中」「このあと」「MAP連動」を確認できます。</p>
+    <div class="form-card">
+      <h3>テスト日時モード</h3>
+      <label class="check-row"><input id="aPreviewEnabled" type="checkbox"> テスト日時を使う</label>
+      <label>テスト日時<input id="aPreviewDateTime" type="datetime-local"></label>
+      <div class="quick-test">
+        <button type="button" data-test-time="2026-11-21T09:25">09:25（9年生教室テスト）</button>
+        <button type="button" data-test-time="2026-11-21T13:35">13:35（体育館テスト）</button>
       </div>
     </div>
+  </div>
 
-    <div id="admin-programs" class="admin-tab">
-      <div class="admin-help">昨年度（2025）の時間構成を参考にした初期データです。プログラムは追加・削除・並べ替え・時刻変更・場所変更ができます。</div>
-      <div id="adminProgramRows"></div>
-      <button id="addProgram" class="secondary full">＋ プログラムを追加</button>
-    </div>
+  <div id="admin-programs" class="admin-tab">
+    <div class="admin-help">開始・終了・内容・会場を変更できます。同時間帯の複数会場も複数行で登録できます。</div>
+    <div id="adminProgramRows"></div><button id="addProgram" class="secondary full">＋ プログラムを追加</button>
+  </div>
 
-    <div id="admin-stamps" class="admin-tab">
-      <div class="admin-help">スタンプは5個固定です。ヒントと獲得時メッセージを毎年変更できます。</div>
-      <div id="adminStampRows"></div>
-    </div>
+  <div id="admin-stamps" class="admin-tab">
+    <div id="adminStampRows"></div>
+  </div>
 
-    <div id="admin-movies" class="admin-tab">
-      <div class="admin-help">動画は年によって何本でも追加・削除できます。</div>
-      <div id="adminMovieRows"></div>
-      <button id="addMovie" class="secondary full">＋ 動画を追加</button>
-    </div>
+  <div id="admin-movies" class="admin-tab">
+    <div class="admin-help">動画はURL貼り付け方式です。</div>
+    <div id="adminMovieRows"></div><button id="addMovie" class="secondary full">＋ 動画を追加</button>
+  </div>
 
-    <div id="admin-posters" class="admin-tab">
-      <div class="admin-help">ポスターも枚数自由です。画像パスまたは画像URLを指定できます。</div>
-      <div id="adminPosterRows"></div>
-      <button id="addPoster" class="secondary full">＋ ポスターを追加</button>
+  <div id="admin-posters" class="admin-tab">
+    <div class="admin-help">Firebase設定済みの場合、画像ファイルを選んでアップロードできます。Storageに保存し、URLをFirestoreへ登録します。</div>
+    <div class="form-card">
+      <label>ポスター名<input id="posterUploadTitle" type="text" placeholder="例：2026年度ポスター"></label>
+      <label>画像ファイル<input id="posterUploadFile" type="file" accept="image/*"></label>
+      <button id="uploadPoster" class="primary" type="button">Firebaseへアップロード</button>
+      <div id="uploadStatus" class="small-note"></div>
     </div>
+    <div id="adminPosterRows"></div>
+  </div>
 
-    <div id="admin-data" class="admin-tab">
-      <div class="form-card">
-        <h3>試作品の保存方式</h3>
-        <p>この版では設定をこのブラウザの localStorage に保存します。別の端末へ移す場合はJSONの書き出し・読み込みを使えます。</p>
-        <button id="exportData" class="secondary">設定をJSONで書き出す</button>
-        <label class="file-label">JSONを読み込む<input id="importData" type="file" accept=".json,application/json"></label>
-        <button id="resetData" class="danger">初期設定に戻す</button>
-      </div>
+  <div id="admin-data" class="admin-tab">
+    <div class="form-card">
+      <h3>Firebase</h3>
+      <p>firebase-config.js に設定を入れると、設定全体をFirestore、ポスター画像をStorageに保存できます。未設定の場合はこの端末のlocalStorageで動作します。</p>
+      <button id="exportData" class="secondary">設定をJSONで書き出す</button>
+      <label class="file-label">JSONを読み込む<input id="importData" type="file" accept=".json,application/json"></label>
+      <button id="resetData" class="danger">初期設定に戻す</button>
     </div>
+  </div>
 
-    <div class="admin-actions">
-      <button id="saveAdmin" class="primary">設定を保存</button>
-      <button id="logoutAdmin" class="secondary">管理画面を閉じる</button>
-    </div>
-  </section>
+  <div class="admin-actions"><button id="saveAdmin" class="primary">設定を保存</button><button id="logoutAdmin" class="secondary">管理画面を閉じる</button></div>
+</section>
 </main>
 
 <dialog id="loginDialog">
-  <form id="loginForm">
-    <h3>管理者ログイン</h3>
-    <p>管理者パスワードを入力してください。</p>
-    <input id="loginPassword" type="password" autocomplete="current-password">
-    <p id="loginError" class="error"></p>
-    <div class="dialog-actions">
-      <button type="button" id="loginCancel" class="secondary">キャンセル</button>
-      <button type="submit" class="primary">ログイン</button>
-    </div>
-  </form>
+<form id="loginForm"><h3>管理者ログイン</h3><p>管理者パスワードを入力してください。</p>
+<input id="loginPassword" type="password" autocomplete="current-password"><p id="loginError" class="error"></p>
+<div class="dialog-actions"><button type="button" id="loginCancel" class="secondary">キャンセル</button><button type="submit" class="primary">ログイン</button></div></form>
 </dialog>
 
-<dialog id="imageDialog">
-  <button id="closeImageDialog" aria-label="閉じる">×</button>
-  <img id="dialogImage" alt=""><p id="dialogCaption"></p>
-</dialog>
-
+<dialog id="imageDialog"><button id="closeImageDialog">×</button><img id="dialogImage" alt=""><p id="dialogCaption"></p></dialog>
 <footer>OFES · Otoyo Festival</footer>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
-</body>
-</html>
+</body></html>

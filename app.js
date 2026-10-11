@@ -206,4 +206,14 @@ $$('[data-quick]').forEach(b=>b.onclick=()=>{byId('testTime').value=b.dataset.qu
 byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:9,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
 byId('importJson').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const next=validData(parsed.data||parsed);if(!confirm('現在の設定を読み込んだデータで置き換えますか？'))return;state=next;persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('読み込みました')}catch(error){console.error(error);alert('JSON形式を確認してください。')}finally{e.target.value=''}};
 byId('resetAll').onclick=()=>{if(!confirm('登録した会場・プログラムなどの試作データをすべて初期化しますか？'))return;state=clone(DEFAULT_DATA);persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('初期化しました')};
-renderPublic();readStampFromUrl();setInterval(()=>{if(!state.test.enabled){renderHeader();renderProgram();if($('#tab-venues').classList.contains('active'))renderVisitorMap();}},30000);
+renderPublic();readStampFromUrl();
+// 外部SDKが読み込めない場合も、接続タブで理由が分かるようにする。
+setTimeout(()=>{
+ const node=byId('firebaseSdkStatus');
+ if(node && node.textContent.includes('読み込み中')){
+   node.textContent='SDKを読み込めませんでした';
+   byId('firebaseAuthStatus').textContent='利用不可';
+   byId('firebaseAuthMessage').textContent='通信環境を確認し、GitHub Pages（https://）で開いてください。ローカルファイルからは認証できません。';
+ }
+},16000);
+setInterval(()=>{if(!state.test.enabled){renderHeader();renderProgram();if($('#tab-venues').classList.contains('active'))renderVisitorMap();}},30000);

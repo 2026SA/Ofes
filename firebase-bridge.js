@@ -1,6 +1,6 @@
 /**
  * OFES Ver.1.0: Firebase Authentication 接続テスト。
- * まだ Firestore にデータを書き込まない。ルールも初期状態のまま変更しない。
+ * まだ Firestore にデータを書き込まない。読み取りは管理者UIDの許可ルールで確認。
  * ブラウザからGoogleログインし、管理者登録用UIDを確認するだけの安全な段階。
  */
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
@@ -53,7 +53,7 @@ try {
     signOutButton.hidden=!user;
     readButton.disabled=!user;
     account.hidden=!user;
-    status(readResult,user?'Firestoreの読み取り確認が可能です（初期ルールでは拒否されます）。':'Googleでログインすると確認できます。');
+    status(readResult,user?'Firestoreの読み取り権限を確認できます。':'Googleでログインすると確認できます。');
     if(user){
       status(authStatus,'Googleログイン成功','ok');
       el('firebaseUserEmail').textContent=user.email || 'メールアドレスなし';
@@ -96,11 +96,11 @@ try {
     status(readResult,'Firestoreへ読み取りテスト中…','loading');
     try{
       const snap=await getDoc(doc(db,'ofes_connection_tests','read_probe'));
-      // 初期ルールではここに到達しない。将来ルールを変更したときの診断用。
+      // 管理者UIDが読み取り許可されている場合、この診断用パスを確認できる。
       status(readResult,snap.exists()?'読み取り成功：診断用データが存在します。':'読み取り成功：診断用のデータはまだありません。','ok');
     }catch(error){
       if(error?.code==='permission-denied'){
-        status(readResult,'アクセス拒否（正常）：Firestoreの初期セキュリティルールが有効です。まだクラウド保存は許可していません。','ok');
+        status(readResult,'アクセス拒否：管理者UIDの設定・Firestoreセキュリティルールを確認してください。','error');
       }else{status(readResult,`読み取り確認に失敗しました：${errorText(error)}`,'error');}
     }finally{readButton.disabled=!auth.currentUser;}
   });

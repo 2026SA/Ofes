@@ -125,20 +125,47 @@ function updateSelectedFloorDetails(){
   el.hidden=!html;el.innerHTML=html;
  }
 }
-function updateFloorZoom(mapId, zoom, focus){
- const m=getMap(mapId), win=byId(`window-${m.id}`),stage=byId(`stage-${m.id}`),out=byId(`zoom-${m.id}`);
+// Keep an entire floor map visible without an inner scrollbar at 100%.
+// The source SVG proportions are fixed; using their natural aspect ratios also
+// keeps all saved percentage-based clickable room coordinates aligned.
+const FIT_MAP_RATIOS = {campus:602/1022, zenki1:782/742};
+function baseMapWidth(mapId, win){
+ const availableWidth=win.clientWidth;
+ if(!availableWidth)return 0; // The venues page may currently be hidden.
+ const aspect=FIT_MAP_RATIOS[mapId];
+ if(!aspect)return availableWidth;
+ const maxHeight=Math.min(window.innerHeight*.62,650);
+ return Math.min(availableWidth,maxHeight*aspect);
+}
+function sizeFloorMap(mapId, focus){
+ const win=byId(`window-${mapId}`),stage=byId(`stage-${mapId}`),out=byId(`zoom-${mapId}`);
  if(!win||!stage)return;
- const old=visitorZoom[mapId], next=Math.round(bound(zoom,100,275));
- if(next===old)return;
- const clientX=focus?.clientX??(win.getBoundingClientRect().left+win.clientWidth/2);
- const clientY=focus?.clientY??(win.getBoundingClientRect().top+Math.min(win.clientHeight/2,130));
+ const baseWidth=baseMapWidth(mapId,win);
+ if(!baseWidth)return;
+ const prevWidth=stage.getBoundingClientRect().width||baseWidth;
+ const prevScrollLeft=win.scrollLeft,prevScrollTop=win.scrollTop;
  const rect=win.getBoundingClientRect();
- const xRatio=(win.scrollLeft+(clientX-rect.left))/Math.max(stage.scrollWidth,1);
- const yRatio=(win.scrollTop+(clientY-rect.top))/Math.max(stage.scrollHeight,1);
- visitorZoom[mapId]=next;stage.style.width=`${next}%`;out.textContent=`${next}%`;
- // Keep the pinch or button zoom center in the same location in the viewport.
- win.scrollLeft=xRatio*stage.scrollWidth-(clientX-rect.left);
- win.scrollTop=yRatio*stage.scrollHeight-(clientY-rect.top);
+ const fx=focus?.clientX??(rect.left+win.clientWidth/2);
+ const fy=focus?.clientY??(rect.top+Math.min(win.clientHeight/2,130));
+ const localX=fx-rect.left,localY=fy-rect.top;
+ const newWidth=baseWidth*(visitorZoom[mapId]/100);
+ // Scrollable only when enlarged. At default size there is NO internal scroll.
+ win.classList.toggle('is-zoomed',visitorZoom[mapId]>100);
+ stage.style.width=`${newWidth}px`;
+ if(out)out.textContent=`${visitorZoom[mapId]}%`;
+ if(visitorZoom[mapId]===100){win.scrollLeft=0;win.scrollTop=0;return;}
+ const scale=newWidth/Math.max(prevWidth,1);
+ win.scrollLeft=Math.max(0,(prevScrollLeft+localX)*scale-localX);
+ win.scrollTop=Math.max(0,(prevScrollTop+localY)*scale-localY);
+}
+function updateFloorZoom(mapId, zoom, focus){
+ const next=Math.round(bound(zoom,100,275));
+ if(next===visitorZoom[mapId])return;
+ visitorZoom[mapId]=next;
+ sizeFloorMap(mapId,focus);
+}
+function sizeVisibleFloorMaps(){
+ for(const m of visibleMaps())sizeFloorMap(m.id);
 }
 function enableMapPinch(){
  $$('#visitorMaps .floor-map-window').forEach(win=>{
@@ -188,7 +215,7 @@ function renderVisitorMap(){
   const m=b.dataset.zoomMap,a=b.dataset.zoomAction;
   updateFloorZoom(m,a==='reset'?100:visitorZoom[m]+(a==='in'?25:-25));
  }));
- enableMapPinch();updateSelectedFloorDetails();
+ enableMapPinch();sizeVisibleFloorMaps();updateSelectedFloorDetails();
 }
 function stampList(){try{return JSON.parse(localStorage.getItem(STAMP_KEY)||'[]')}catch{return[]}}
 function renderStamps(){const a=stampList();byId('stampProgress').textContent=`獲得スタンプ：${a.length} / 5`;
@@ -293,4 +320,5 @@ setTimeout(()=>{
    byId('firebaseAuthMessage').textContent='通信環境を確認し、GitHub Pages（https://）で開いてください。ローカルファイルからは認証できません。';
  }
 },16000);
+window.addEventListener('resize',()=>{if($('#tab-venues').classList.contains('active'))sizeVisibleFloorMaps();});
 setInterval(()=>{if(!state.test.enabled){renderHeader();renderProgram();if($('#tab-venues').classList.contains('active'))renderVisitorMap();}},30000);

@@ -37,3 +37,10 @@
 .floor-detail p{margin:7px 0}
 .floor-detail ul{margin:7px 0;padding-left:20px;line-height:1.8}
 @media(max-width:520px){.building-tabs{gap:5px}.building-tabs button{font-size:12px;gap:4px;padding:9px 2px;min-height:47px}.floor-card{padding:9px}.floor-card-header h3{font-size:18px}.floor-tools>span{font-size:11px}.floor-zoom{gap:2px}.floor-zoom button{min-width:29px;height:32px}.floor-zoom span{min-width:37px;font-size:12px}.floor-zoom .zoom-reset{min-width:36px;font-size:11px;padding:0 3px}}
+
+/* Ver.1.2: floor diagrams fit in full on first display; internal scroll only when zoomed. */
+.floor-map-window{max-height:none;overflow:visible;}
+.floor-map-window.is-zoomed{overflow:auto;max-height:min(70vh,680px);overscroll-behavior:contain;}
+.floor-map-window .map-stage{margin:0 auto;max-width:none;}
+.hero-identity img{width:83px;height:92px;object-fit:contain;background:#fff;border:0;border-radius:0;flex-shrink:0;}
+@media(max-width:480px){.hero-identity img{width:70px;height:77px;}}

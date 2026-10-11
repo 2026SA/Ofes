@@ -42,8 +42,9 @@ function validData(v){
 }
 function bound(v,a,b){const n=Number(v);return Number.isFinite(n)?Math.max(a,Math.min(b,n)):a}
 let state=getSaved();
-let visitorBuilding='campus',visitorFloor=1,visitorMap='campus',session='current',visitorSelected='';
-let visitorZoom=100, adminMap='campus',editId='',editDraft=null,drawMode='',dragStart=null,dragRect=null;
+let visitorBuilding='campus',session='current',visitorSelected='';
+const visitorZoom=Object.fromEntries(MAPS.map(m=>[m.id,100]));
+let adminMap='campus',editId='',editDraft=null,drawMode='',dragStart=null,dragRect=null;
 function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true}catch(e){alert('ブラウザに保存できませんでした。容量・設定をご確認ください。');return false}}
 function toast(msg){byId('saveToast').textContent=msg;}
 function getZone(id){return state.zones.find(z=>z.id===id)}
@@ -64,7 +65,7 @@ function renderHeader(){
  byId('countdown').textContent=dif>0?`開催まであと ${dif} 日`:dif===0?'いよいよ本日！':'今年のおおフェスは終了しました';
  const v=viewTime();byId('previewTag').hidden=!v.demo;byId('previewTag').textContent=`TEST ${v.date} ${v.time}`;
 }
-function setTab(tab){$$('.nav').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$$('.tab-view').forEach(v=>v.classList.toggle('active',v.id===`tab-${tab}`));if(tab==='venues')renderVisitorMap();window.scrollTo({top:0,behavior:'smooth'});}
+function setTab(tab,opts={}){$$('.nav').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$$('.tab-view').forEach(v=>v.classList.toggle('active',v.id===`tab-${tab}`));if(tab==='venues')renderVisitorMap();if(opts.scrollTop!==false)window.scrollTo({top:0,behavior:'smooth'});}
 $$('.nav').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 function renderProgram(){
  const v=viewTime(),active=activePrograms();let text=`現在の判定時刻：<strong>${esc(v.date)} ${esc(v.time)}</strong>`;
@@ -74,44 +75,120 @@ function renderProgram(){
  byId('programList').innerHTML=orderedPrograms().map(p=>`<div class="program-row ${active.some(x=>x.id===p.id)?'on':''}">
  <div class="time">${esc(p.start)}</div><div><strong>${esc(p.title)}</strong>${active.some(x=>x.id===p.id)?'<span class="tag">開催中</span>':''}
  <div class="where">${esc(p.start)}〜${esc(p.end)}　${esc(roomLabel(p))} <button type="button" class="minilink" data-see="${esc(p.zoneId)}" ${p.zoneId?'':'disabled'}>会場を見る</button></div></div></div>`).join('');
- $$('[data-see]').forEach(b=>b.onclick=()=>{if(!b.dataset.see)return;const z=getZone(b.dataset.see);if(!z)return;visitorBuilding=getMap(z.mapId).building;visitorFloor=getMap(z.mapId).floor||1;visitorMap=z.mapId;visitorSelected=z.id;session='current';setTab('venues');});
+ $$('[data-see]').forEach(b=>b.onclick=()=>{
+  if(!b.dataset.see)return;
+  const z=getZone(b.dataset.see);if(!z)return;
+  visitorBuilding=getMap(z.mapId).building;visitorSelected=z.id;session='current';
+  setTab('venues',{scrollTop:false});
+  requestAnimationFrame(()=>byId(`floor-${z.mapId}`)?.scrollIntoView({behavior:'smooth',block:'start'}));
+ });
 }
-function renderBuildingControls(){
- byId('visitorBuilding').value=visitorBuilding;
- const floorMap=MAPS.filter(m=>m.building===visitorBuilding&&m.floor);
- const wrap=byId('visitorFloorWrap');wrap.hidden=!floorMap.length;
- if(floorMap.length){byId('visitorFloor').innerHTML=floorMap.map(m=>`<option value="${m.floor}">${m.floor}F</option>`).join('');if(!floorMap.some(x=>x.floor===visitorFloor))visitorFloor=1;byId('visitorFloor').value=String(visitorFloor);visitorMap=floorMap.find(m=>m.floor===visitorFloor)?.id||floorMap[0].id;}else visitorMap='campus';
+function visibleMaps(){
+ if(visitorBuilding==='campus')return MAPS.filter(m=>m.id==='campus');
+ return MAPS.filter(m=>m.building===visitorBuilding).sort((a,b)=>b.floor-a.floor);
 }
-byId('visitorBuilding').onchange=e=>{visitorBuilding=e.target.value;visitorFloor=1;visitorSelected='';renderVisitorMap()};
-byId('visitorFloor').onchange=e=>{visitorFloor=Number(e.target.value);visitorSelected='';renderVisitorMap()};
-byId('zoomIn').onclick=()=>{visitorZoom=Math.min(250,visitorZoom+25);renderVisitorMap()};
-byId('zoomOut').onclick=()=>{visitorZoom=Math.max(100,visitorZoom-25);renderVisitorMap()};
+function renderBuildingTabs(){
+ $$('#buildingTabs [data-building]').forEach(b=>{
+  const active=b.dataset.building===visitorBuilding;
+  b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
+ });
+}
+$$('#buildingTabs [data-building]').forEach(b=>b.onclick=()=>{
+ visitorBuilding=b.dataset.building;visitorSelected='';renderVisitorMap();
+ byId('buildingTabs').scrollIntoView({behavior:'smooth',block:'start'});
+});
 function renderSessionButtons(){
  const entries=[['current','現在'],['s1','S①'],['s2','S②'],['s3','S③'],['s4','S④']];
  byId('sessionSwitch').innerHTML=entries.map(([id,label])=>`<button data-session="${id}" class="${id===session?'active':''}" aria-pressed="${id===session}">${label}</button>`).join('');
- $$('[data-session]').forEach(b=>b.onclick=()=>{session=b.dataset.session;visitorSelected='';renderVisitorMap();});
+ $$('[data-session]').forEach(b=>b.onclick=()=>{session=b.dataset.session;renderVisitorMap();});
 }
 function zStyle(z){return `left:${bound(z.x,0,100)}%;top:${bound(z.y,0,100)}%;width:${bound(z.w,.1,100)}%;height:${bound(z.h,.1,100)}%;`}
 function zoneHtml(z,active,selected){const label=(z.w<12||z.h<12)?String(z.id).split('-').pop():z.name;return `<button type="button" class="zone ${active?'on':''} ${selected?'selected':''}" style="${zStyle(z)}" data-zone="${esc(z.id)}" title="${esc(z.name)}" aria-label="${esc(z.name)}"><span class="zone-caption">${esc(label)}</span></button>`}
-function renderVisitorMap(){
- renderBuildingControls();renderSessionButtons();
- const map=getMap(visitorMap);byId('mapTitle').textContent=map.name;
- byId('visitorImage').src=map.src;byId('visitorImage').alt=map.name;
- byId('visitorStage').style.width=`${visitorZoom}%`;byId('zoomValue').textContent=`${visitorZoom}%`;
- const programs=scheduledPrograms(), activeIds=new Set(programs.map(p=>p.zoneId).filter(Boolean));
- const zones=state.zones.filter(z=>z.mapId===map.id);
- byId('visitorZones').innerHTML=zones.map(z=>zoneHtml(z,activeIds.has(z.id),z.id===visitorSelected)).join('');
- $$(`#visitorZones [data-zone]`).forEach(b=>b.onclick=()=>{visitorSelected=b.dataset.zone;renderVisitorMap()});
- const count=zones.filter(z=>activeIds.has(z.id)).length;
- byId('mapSummary').textContent=session==='current'?`現在：${viewTime().time}　この図で使用中の会場：${count}か所`: `セッション${{s1:'①',s2:'②',s3:'③',s4:'④'}[session]}　この図で使用する会場：${count}か所`;
- const detail=byId('venueDetail');
+function floorLabel(m){return m.floor?`${m.floor}階`:'学校全体図'}
+function floorDetailHtml(m){
  const z=getZone(visitorSelected);
- if(!z){detail.innerHTML='<strong>会場をタップすると、予定を表示します。</strong><p class="muted">まだ会場が登録されていない場合は、管理者画面から範囲を登録してください。</p>';return}
+ if(!z||z.mapId!==m.id)return '';
  const ps=orderedPrograms().filter(p=>p.zoneId===z.id);
- detail.innerHTML=`<h3>${esc(z.name)} <span class="pill">${esc(z.id)}</span></h3>${z.note?`<p>${esc(z.note)}</p>`:''}
- <p class="muted">${esc(map.name)}　${ps.length}件のプログラム</p>
+ return `<h4>${esc(z.name)} <span class="pill">${esc(z.id)}</span></h4>${z.note?`<p>${esc(z.note)}</p>`:''}
+ <p class="muted">${esc(m.name)}　${ps.length}件のプログラム</p>
  ${ps.length?`<ul>${ps.map(p=>`<li><strong>${esc(p.start)}〜${esc(p.end)}</strong>　${esc(p.title)}</li>`).join('')}</ul>`:'<p>この会場のプログラムはまだ登録されていません。</p>'}
  <p class="caption">リアクションボタンは次の開発段階で追加予定です。</p>`;
+}
+function updateSelectedFloorDetails(){
+ $$('#visitorMaps [data-zone]').forEach(b=>{
+  const selected=b.dataset.zone===visitorSelected;
+  b.classList.toggle('selected',selected);
+ });
+ for(const m of visibleMaps()){
+  const el=byId(`floor-detail-${m.id}`);if(!el)continue;
+  const html=floorDetailHtml(m);
+  el.hidden=!html;el.innerHTML=html;
+ }
+}
+function updateFloorZoom(mapId, zoom, focus){
+ const m=getMap(mapId), win=byId(`window-${m.id}`),stage=byId(`stage-${m.id}`),out=byId(`zoom-${m.id}`);
+ if(!win||!stage)return;
+ const old=visitorZoom[mapId], next=Math.round(bound(zoom,100,275));
+ if(next===old)return;
+ const clientX=focus?.clientX??(win.getBoundingClientRect().left+win.clientWidth/2);
+ const clientY=focus?.clientY??(win.getBoundingClientRect().top+Math.min(win.clientHeight/2,130));
+ const rect=win.getBoundingClientRect();
+ const xRatio=(win.scrollLeft+(clientX-rect.left))/Math.max(stage.scrollWidth,1);
+ const yRatio=(win.scrollTop+(clientY-rect.top))/Math.max(stage.scrollHeight,1);
+ visitorZoom[mapId]=next;stage.style.width=`${next}%`;out.textContent=`${next}%`;
+ // Keep the pinch or button zoom center in the same location in the viewport.
+ win.scrollLeft=xRatio*stage.scrollWidth-(clientX-rect.left);
+ win.scrollTop=yRatio*stage.scrollHeight-(clientY-rect.top);
+}
+function enableMapPinch(){
+ $$('#visitorMaps .floor-map-window').forEach(win=>{
+  let gesture=null;
+  const touchDistance=ts=>Math.hypot(ts[0].clientX-ts[1].clientX,ts[0].clientY-ts[1].clientY);
+  const center=ts=>({clientX:(ts[0].clientX+ts[1].clientX)/2,clientY:(ts[0].clientY+ts[1].clientY)/2});
+  win.addEventListener('touchstart',e=>{
+   if(e.touches.length===2){gesture={distance:touchDistance(e.touches),zoom:visitorZoom[win.dataset.map]};}
+  },{passive:true});
+  win.addEventListener('touchmove',e=>{
+   if(e.touches.length!==2||!gesture)return;
+   e.preventDefault();
+   updateFloorZoom(win.dataset.map,gesture.zoom*touchDistance(e.touches)/Math.max(gesture.distance,1),center(e.touches));
+  },{passive:false});
+  win.addEventListener('touchend',e=>{if(e.touches.length<2)gesture=null;},{passive:true});
+  win.addEventListener('touchcancel',()=>{gesture=null;},{passive:true});
+ });
+}
+function renderVisitorMap(){
+ renderBuildingTabs();renderSessionButtons();
+ const maps=visibleMaps();
+ const programs=scheduledPrograms(),activeIds=new Set(programs.map(p=>p.zoneId).filter(Boolean));
+ const count=state.zones.filter(z=>maps.some(m=>m.id===z.mapId)&&activeIds.has(z.id)).length;
+ const buildingName={campus:'学校全体',zenki:'前期棟',koki:'後期棟'}[visitorBuilding];
+ byId('mapSummary').textContent=session==='current'?`現在：${viewTime().time}　${buildingName}で使用中の会場：${count}か所`:`セッション${{s1:'①',s2:'②',s3:'③',s4:'④'}[session]}　${buildingName}で使用する会場：${count}か所`;
+ byId('visitorMaps').innerHTML=maps.map(m=>{
+  const zones=state.zones.filter(z=>z.mapId===m.id),floorCount=zones.filter(z=>activeIds.has(z.id)).length;
+  return `<article class="floor-card" id="floor-${esc(m.id)}">
+   <div class="floor-card-header"><div><h3>${esc(floorLabel(m))}</h3><span class="floor-subtitle">${esc(m.name)}</span></div><span class="floor-count">${floorCount}か所 使用</span></div>
+   <div class="floor-tools"><span>図を拡大して会場をタップ</span><div class="floor-zoom"><button type="button" data-zoom-map="${m.id}" data-zoom-action="out" aria-label="${esc(m.name)}を縮小">−</button><span id="zoom-${m.id}">${visitorZoom[m.id]}%</span><button type="button" data-zoom-map="${m.id}" data-zoom-action="in" aria-label="${esc(m.name)}を拡大">＋</button><button type="button" class="zoom-reset" data-zoom-map="${m.id}" data-zoom-action="reset">戻す</button></div></div>
+   <div class="floor-map-window" id="window-${m.id}" data-map="${m.id}">
+    <div class="map-stage" id="stage-${m.id}" style="width:${visitorZoom[m.id]}%">
+     <img src="${esc(m.src)}" draggable="false" alt="${esc(m.name)}">
+     <div class="map-zone-layer">${zones.map(z=>zoneHtml(z,activeIds.has(z.id),z.id===visitorSelected)).join('')}</div>
+    </div>
+   </div>
+   <div class="floor-detail" id="floor-detail-${m.id}" hidden></div>
+  </article>`;
+ }).join('');
+ byId('visitorMaps').querySelectorAll('[data-zone]').forEach(b=>b.addEventListener('click',()=>{
+  visitorSelected=b.dataset.zone;
+  updateSelectedFloorDetails();
+  const detail=byId(`floor-detail-${getZone(visitorSelected)?.mapId}`);
+  if(detail && !detail.hidden){detail.scrollIntoView({behavior:'smooth',block:'nearest'});}
+ }));
+ byId('visitorMaps').querySelectorAll('[data-zoom-map]').forEach(b=>b.addEventListener('click',()=>{
+  const m=b.dataset.zoomMap,a=b.dataset.zoomAction;
+  updateFloorZoom(m,a==='reset'?100:visitorZoom[m]+(a==='in'?25:-25));
+ }));
+ enableMapPinch();updateSelectedFloorDetails();
 }
 function stampList(){try{return JSON.parse(localStorage.getItem(STAMP_KEY)||'[]')}catch{return[]}}
 function renderStamps(){const a=stampList();byId('stampProgress').textContent=`獲得スタンプ：${a.length} / 5`;

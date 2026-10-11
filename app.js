@@ -9,13 +9,13 @@ const MAPS = [
  {id:'koki2', name:'後期棟2F', src:'assets/maps/koki2.svg', prefix:'K2', building:'koki',floor:2},
  {id:'koki3', name:'後期棟3F', src:'assets/maps/koki3.svg', prefix:'K3', building:'koki',floor:3}
 ];
-const STORAGE_KEY='ofes-prototype-v08';
+const STORAGE_KEY='ofes-prototype-v08'; // v0.8〜v1.2から維持
 const STAMP_KEY='ofes-stamp-v08';
 // 試作版の画面ロックのみ。Firebaseの安全な認証には使用しない。
 const DEMO_ADMIN_PASSWORD='ofes0034';
 const DEFAULT_DATA = {
  year:'2026', eventDate:'2026-11-21', slogan:'挑戦・協働・創造',
- test:{enabled:true,date:'2026-11-21',time:'09:25'},
+ test:{enabled:false,date:'2026-11-21',time:'09:25'},
  zones:[],nextIds:{campus:1,zenki1:1,zenki2:1,koki1:1,koki2:1,koki3:1},
  programs:[
   {id:'p1',session:'other',start:'08:45',end:'09:05',title:'開会行事・アトラクション',zoneId:''},
@@ -41,11 +41,54 @@ function validData(v){
  return out;
 }
 function bound(v,a,b){const n=Number(v);return Number.isFinite(n)?Math.max(a,Math.min(b,n)):a}
-let state=getSaved();
+// ローカル編集用データと、Firestoreから取得した公開データは混ぜない。
+// バージョン更新時、従来のlocalStorageデータは編集用としてそのまま引き継ぐ。
+let hasLegacyDraft=false;
+try {hasLegacyDraft=!!localStorage.getItem(STORAGE_KEY);} catch(e) {console.warn('localStorage unavailable',e);}
+let draftState=getSaved();
+let publishedState=null;
+let editorActive=false;
+let state=draftState;
+let cloudAvailable=false;
+const schemaVersion=1;
+function projectPublished(src){
+ const safe=validData(src);
+ // テスト日時はブラウザ専用。公開データには送らず、全来場者で実時刻を使う。
+ return {schemaVersion,year:safe.year,eventDate:safe.eventDate,slogan:safe.slogan,
+   zones:clone(safe.zones),nextIds:clone(safe.nextIds),programs:clone(safe.programs)};
+}
+function acceptPublished(doc){
+ try {
+  publishedState=doc?validData({...doc,test:{enabled:false,date:doc.eventDate||DEFAULT_DATA.eventDate,time:'09:25'}}):null;
+  cloudAvailable=!!publishedState;
+  if(!editorActive){state=publishedState||draftState;renderPublic();}
+ }catch(e){console.error('公開データの形式が不正です',e);toast('Firestoreの公開データを読み込めませんでした。');}
+}
+function switchDraft(){
+ editorActive=true;
+ // 新規ブラウザの場合は、最初の編集時に公開済みデータから下書きを作る。
+ if(!hasLegacyDraft && !localStorage.getItem(STORAGE_KEY) && publishedState){
+  draftState=clone(publishedState);
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(draftState));
+ }
+ state=draftState;
+}
+function closeDraft(){editorActive=false;state=publishedState||draftState;renderPublic();}
+window.OFESCloud={
+  exportPublished:()=>projectPublished(draftState),
+  publishedSummary:()=>({exists:cloudAvailable,year:publishedState?.year,zones:publishedState?.zones.length||0,programs:publishedState?.programs.length||0}),
+  importPublishedAsDraft:()=>{
+   if(!publishedState)throw Error('Firestoreにはまだ公開データがありません。');
+   draftState=clone(publishedState);state=draftState;persist();editId='';editDraft=null;drawMode='';adminMap='campus';
+   renderAdmin();renderPublic();toast('Firestoreの公開データを編集用に読み込みました');
+  }
+};
+window.addEventListener('ofes-cloud-published',e=>acceptPublished(e.detail?.data??null));
+
 let visitorBuilding='campus',session='current',visitorSelected='';
 const visitorZoom=Object.fromEntries(MAPS.map(m=>[m.id,100]));
 let adminMap='campus',editId='',editDraft=null,drawMode='',dragStart=null,dragRect=null;
-function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true}catch(e){alert('ブラウザに保存できませんでした。容量・設定をご確認ください。');return false}}
+function persist(){try{draftState=state;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true}catch(e){alert('ブラウザに保存できませんでした。容量・設定をご確認ください。');return false}}
 function toast(msg){byId('saveToast').textContent=msg;}
 function getZone(id){return state.zones.find(z=>z.id===id)}
 function getMap(id){return MAPS.find(m=>m.id===id)||MAPS[0]}
@@ -229,8 +272,8 @@ function renderPublic(){renderHeader();renderProgram();renderVisitorMap();render
 byId('openAdmin').onclick=()=>{byId('loginModal').hidden=false;byId('adminPassword').value='';byId('loginError').textContent='';byId('adminPassword').focus()};
 byId('cancelLogin').onclick=()=>byId('loginModal').hidden=true;
 byId('loginForm').onsubmit=e=>{e.preventDefault();if(byId('adminPassword').value!==DEMO_ADMIN_PASSWORD){byId('loginError').textContent='パスワードが違います。';return}
- byId('loginModal').hidden=true;byId('adminPanel').hidden=false;renderAdmin();};
-byId('closeAdmin').onclick=()=>{byId('adminPanel').hidden=true;drawMode='';renderPublic()};
+ byId('loginModal').hidden=true;switchDraft();byId('adminPanel').hidden=false;renderPublic();renderAdmin();};
+byId('closeAdmin').onclick=()=>{byId('adminPanel').hidden=true;drawMode='';closeDraft()};
 $$('#adminNav button').forEach(b=>b.onclick=()=>{const t=b.dataset.admin;$$('#adminNav button').forEach(x=>x.classList.toggle('active',x===b));$$('.admin-page').forEach(x=>x.classList.toggle('active',x.id===`admin-${t}`));if(t==='venues')renderEditor();if(t==='program')renderAdminPrograms();if(t==='basic')renderBasic();});
 function renderAdmin(){byId('adminMapSelect').innerHTML=MAPS.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');byId('adminMapSelect').value=adminMap;renderEditor();renderAdminPrograms();renderBasic();}
 byId('adminMapSelect').onchange=e=>{adminMap=e.target.value;editId='';editDraft=null;drawMode='';renderEditor()};
@@ -308,8 +351,8 @@ byId('testEnabled').onchange=updateTest;byId('testDate').onchange=updateTest;byI
 byId('testSlider').oninput=e=>{const n=Number(e.target.value);byId('testTime').value=`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;byId('testEnabled').checked=true;updateTest();};
 $$('[data-quick]').forEach(b=>b.onclick=()=>{byId('testTime').value=b.dataset.quick;byId('testDate').value=state.eventDate;byId('testEnabled').checked=true;updateTest();});
 byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:9,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
-byId('importJson').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const next=validData(parsed.data||parsed);if(!confirm('現在の設定を読み込んだデータで置き換えますか？'))return;state=next;persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('読み込みました')}catch(error){console.error(error);alert('JSON形式を確認してください。')}finally{e.target.value=''}};
-byId('resetAll').onclick=()=>{if(!confirm('登録した会場・プログラムなどの試作データをすべて初期化しますか？'))return;state=clone(DEFAULT_DATA);persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('初期化しました')};
+byId('importJson').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const next=validData(parsed.data||parsed);if(!confirm('現在の設定を読み込んだデータで置き換えますか？'))return;state=next;draftState=state;persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('読み込みました')}catch(error){console.error(error);alert('JSON形式を確認してください。')}finally{e.target.value=''}};
+byId('resetAll').onclick=()=>{if(!confirm('登録した会場・プログラムなどの試作データをすべて初期化しますか？'))return;state=clone(DEFAULT_DATA);draftState=state;persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('初期化しました')};
 renderPublic();readStampFromUrl();
 // 外部SDKが読み込めない場合も、接続タブで理由が分かるようにする。
 setTimeout(()=>{

@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // OFES の管理者 (Firebase Authentication の UID)。
+    // 学校アカウントへの移行時は、新しい管理者UIDに更新してください。
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid == "XxawqhAFz0SgpzYQbMKMdWQDBNx2";
+    }
+
+    // 公開済みの会場・プログラム・年度設定。来場者はログイン不要で閲覧可。
+    // 公開・更新・削除できるのは管理者だけ。
+    match /published/site {
+      allow get: if true;
+      allow list: if false;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Ver.1.0からの読み取り診断用（書き込み不要）。
+    match /ofes_connection_tests/{documentId} {
+      allow get: if isAdmin();
+      allow list, create, update, delete: if false;
+    }
+
+    // それ以外の場所は今回の段階ではすべて拒否。
+    // リアクション機能は別段階で専用ルールを検討する。
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,150 +1,134 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
-<title>OFES｜おおフェス</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f8f7f3">
+  <title>OFES｜おおフェス</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  <link rel="stylesheet" href="style.css?v=08">
+  <script defer src="app.js?v=08"></script>
 </head>
 <body>
 <header class="hero">
-  <div class="hero-inner">
-    <img src="images/ofes-logo.svg" alt="OFES" class="hero-logo">
-    <p class="jp-title">おおフェス</p>
-    <p class="lead">文化発表会をもっと楽しもう！</p>
-    <div id="testBadge" class="test-badge hidden">TEST MODE</div>
-    <div id="todaySummary" class="today-summary"></div>
-  </div>
+  <div class="hero-identity"><img src="assets/logo.svg" alt="OFES"><div><span class="eyebrow">OTOYO FESTIVAL</span><h1>おおフェス <span id="heroYear">2026</span></h1><p id="heroSlogan">挑戦・協働・創造</p></div></div>
+  <div class="hero-info"><span id="countdown">開催日まで、あと何日？</span><span id="previewTag" class="test-chip" hidden>テスト日時</span></div>
 </header>
+<main class="app-shell">
+  <nav class="main-nav" aria-label="メインメニュー">
+    <button type="button" class="nav active" data-tab="program"><span>📅</span>プログラム</button>
+    <button type="button" class="nav" data-tab="venues"><span>🏫</span>会場案内</button>
+    <button type="button" class="nav" data-tab="stamp"><span>⭐</span>スタンプラリー</button>
+    <button type="button" class="nav" data-tab="gallery"><span>🖼️</span>ギャラリー</button>
+  </nav>
 
-<main>
-<section id="home" class="page active">
-  <div class="menu-grid">
-    <button class="menu-card" data-page="program"><span>📅</span><b>PROGRAM</b><small>今日のプログラム</small></button>
-    <button class="menu-card" data-page="map"><span>🗺️</span><b>MAP</b><small>校内案内・開催中の場所</small></button>
-    <button class="menu-card" data-page="stamp"><span>⭐</span><b>STAMP RALLY</b><small>5つ集めよう</small></button>
-    <button class="menu-card" data-page="movie"><span>▶️</span><b>MOVIE</b><small>動画を見る</small></button>
-    <button class="menu-card" data-page="gallery"><span>🖼️</span><b>GALLERY</b><small>ポスターを見る</small></button>
-  </div>
-  <div class="notice"><h2>お知らせ</h2><p id="noticeText"></p></div>
-  <div id="firebaseState" class="firebase-state"></div>
-  <button id="adminOpenBtn" class="admin-open">⚙ 管理者</button>
-</section>
+  <section class="tab-view active" id="tab-program">
+    <div class="section-heading"><h2>プログラム</h2><p>現在の時刻とセッションに合わせて表示します。</p></div>
+    <div id="timeStatus" class="notice-card"></div>
+    <div class="subheading"><h3>全プログラム</h3><span class="muted">昨年度を参考にしたテストデータ</span></div>
+    <div id="programList" class="program-list"></div>
+  </section>
 
-<section id="program" class="page">
-  <div class="section-head"><button class="back">←</button><div><h2>PROGRAM</h2><p>現在時刻に合わせて自動表示</p></div></div>
-  <div id="programStatus"></div><h3>全プログラム</h3><div id="programList"></div>
-</section>
-
-<section id="map" class="page">
-  <div class="section-head"><button class="back">←</button><div><h2>MAP</h2><p>来場者向けの簡略案内図</p></div></div>
-  <div id="mapStatus" class="panel"></div>
-  <div id="mapTabs" class="floor-tabs"></div>
-  <div class="map-wrap"><img id="mapImage" class="map-image" alt="校内案内図"><div id="mapOverlay"></div></div>
-  <div class="map-legend"><span><i class="legend-now"></i>現在開催中</span><span><i class="legend-next"></i>このあと</span></div>
-  <p class="small-note">防犯上、来場者に必要な範囲に絞った概略図です。</p>
-</section>
-
-<section id="stamp" class="page">
-  <div class="section-head"><button class="back">←</button><div><h2>STAMP RALLY</h2><p>見てほしい場所を探そう！</p></div></div>
-  <div class="progress-wrap"><div id="stampProgress" class="progress"></div></div>
-  <p id="stampCount" class="center"></p><div id="stampList" class="stamp-grid"></div>
-  <div id="completeBox" class="complete hidden">🎉 COMPLETE!<small>5つ全部のスタンプを見つけました！</small></div>
-  <button id="resetStamps" class="text-btn">試作用：スタンプをリセット</button>
-</section>
-
-<section id="movie" class="page">
-  <div class="section-head"><button class="back">←</button><div><h2>MOVIE</h2><p>動画を見る</p></div></div>
-  <div id="movieList" class="card-list"></div>
-</section>
-
-<section id="gallery" class="page">
-  <div class="section-head"><button class="back">←</button><div><h2>GALLERY</h2><p>ポスターを見る</p></div></div>
-  <div id="galleryGrid" class="gallery-grid"></div>
-</section>
-
-<section id="admin" class="page">
-  <div class="section-head"><button class="back-home">←</button><div><h2>ADMIN</h2><p>OFES 管理者画面</p></div></div>
-  <div class="admin-nav">
-    <button data-admin-tab="basic" class="active">基本</button>
-    <button data-admin-tab="programs">プログラム</button>
-    <button data-admin-tab="stamps">スタンプ</button>
-    <button data-admin-tab="movies">動画</button>
-    <button data-admin-tab="posters">ポスター</button>
-    <button data-admin-tab="data">データ</button>
-  </div>
-
-  <div id="admin-basic" class="admin-tab active">
-    <div class="form-card">
-      <label>年度<input id="aYear" type="text"></label>
-      <label>開催日<input id="aDate" type="date"></label>
-      <label>お知らせ<textarea id="aNotice" rows="3"></textarea></label>
-      <div class="fixed-password">管理者パスワード：<b>固定（全年度共通）</b></div>
+  <section class="tab-view" id="tab-venues">
+    <div class="section-heading"><h2>会場案内</h2><p>棟・階・セッションを選んで会場を探せます。</p></div>
+    <div class="form-line controls-box">
+      <label>建物
+        <select id="visitorBuilding"><option value="campus">学校全体</option><option value="zenki">前期棟</option><option value="koki">後期棟</option></select>
+      </label>
+      <label id="visitorFloorWrap" hidden>階
+        <select id="visitorFloor"></select>
+      </label>
     </div>
-    <div class="form-card">
-      <h3>テスト日時モード</h3>
-      <label class="check-row"><input id="aPreviewEnabled" type="checkbox"> テスト日時を使う</label>
-      <label>テスト日時<input id="aPreviewDateTime" type="datetime-local"></label>
-      <div class="quick-test">
-        <button type="button" data-test-time="2026-11-21T09:25">09:25（9年生教室テスト）</button>
-        <button type="button" data-test-time="2026-11-21T13:35">13:35（体育館テスト）</button>
+    <div class="session-label">表示する時間帯</div>
+    <div class="session-switch" id="sessionSwitch" aria-label="時間帯を選択"></div>
+    <div id="mapSummary" class="info-strip"></div>
+    <div class="map-toolbar"><span id="mapTitle">学校全体図</span><div><button type="button" id="zoomOut" class="icon-btn" aria-label="縮小">−</button><span id="zoomValue">100%</span><button type="button" id="zoomIn" class="icon-btn" aria-label="拡大">＋</button></div></div>
+    <div class="map-window" id="visitorWindow"><div class="map-stage" id="visitorStage"><img id="visitorImage" draggable="false" alt="校舎配置図"><div id="visitorZones" class="map-zone-layer"></div></div></div>
+    <div class="legend"><span><i class="now"></i>選択中の時間帯で使用</span><span><i class="neutral"></i>登録済み会場</span></div>
+    <div id="venueDetail" class="detail-card" aria-live="polite"></div>
+  </section>
+
+  <section class="tab-view" id="tab-stamp">
+    <div class="section-heading"><h2>スタンプラリー</h2><p>校内5か所のQRコードを探そう。</p></div>
+    <div id="stampProgress"></div><div id="stampCards" class="stamp-grid"></div>
+  </section>
+
+  <section class="tab-view" id="tab-gallery">
+    <div class="section-heading"><h2>ギャラリー</h2><p>ポスターと動画をまとめて楽しめます。</p></div>
+    <div class="segment" id="galleryTabs"><button data-gallery="posters" class="active">ポスター</button><button data-gallery="videos">動画</button></div>
+    <div id="galleryContents"></div>
+    <p id="channelLink"></p>
+  </section>
+
+  <div class="admin-entry"><button type="button" id="openAdmin">⚙ 管理者</button><span>来場者はログイン不要</span></div>
+</main>
+
+<div id="loginModal" class="modal" hidden><div class="modal-inner"><h2>管理者ログイン</h2><p>試作版の管理画面です。</p><form id="loginForm"><label>管理者パスワード<input type="password" id="adminPassword" required autocomplete="current-password"></label><p id="loginError" class="error"></p><div class="modal-actions"><button type="button" class="btn light" id="cancelLogin">キャンセル</button><button type="submit" class="btn primary">ログイン</button></div></form></div></div>
+
+<section id="adminPanel" class="admin-panel" hidden>
+  <header class="admin-header"><div><span class="eyebrow">ADMINISTRATOR</span><h2>OFES 管理画面</h2><p>会場の登録・位置合わせ（Ver.0.8試作）</p></div><button id="closeAdmin" class="btn light">閉じる ×</button></header>
+  <nav class="admin-tabs" id="adminNav" aria-label="管理項目"><button data-admin="venues" class="active">会場・配置図</button><button data-admin="program">プログラム</button><button data-admin="basic">年度・時刻テスト</button><button data-admin="data">データ保存</button></nav>
+
+  <div class="admin-page active" id="admin-venues">
+    <div class="admin-intro"><b>使い方</b>　①図面を選ぶ → ②「新規会場」を押す → ③教室の枠をドラッグで囲む → ④会場名を入力して保存。既存会場の位置も指定し直せます。</div>
+    <div class="admin-venue-layout">
+      <div class="admin-canvas-col">
+        <div class="admin-canvas-tools"><label>配置図を選択<select id="adminMapSelect"></select></label><div class="tool-buttons"><button id="newVenue" class="btn primary">＋ 新規会場</button><button id="redrawVenue" class="btn light">位置を指定し直す</button><button id="cancelDrawing" class="btn light">選択解除</button></div></div>
+        <p id="drawGuide" class="draw-guide">図面の枠をタップすると編集できます。</p>
+        <div class="admin-map-window" id="adminWindow"><div class="admin-map-stage" id="adminStage"><img id="adminMapImage" draggable="false" alt="会場登録用配置図"><div class="map-zone-layer editor-zones" id="adminZoneLayer"></div><div class="draw-layer" id="drawLayer"></div></div></div>
+        <p class="caption">※ 図面の線は変更しません。教室などの範囲を透明な枠として重ねて登録します。</p>
+      </div>
+      <div class="admin-form-col">
+        <div class="editor-card"><h3>会場情報</h3><p id="emptyVenueNote" class="muted">会場を選択するか、新規会場を登録してください。</p>
+          <form id="venueForm" hidden>
+            <label>会場ID（固定）<input id="zoneId" readonly></label>
+            <label>会場名<input id="zoneName" maxlength="48" placeholder="例：9年生教室" required></label>
+            <label>補足情報（任意）<input id="zoneNote" maxlength="100" placeholder="例：探究学習の展示"></label>
+            <label>種類<select id="zoneKind"><option value="classroom">教室</option><option value="exhibit">展示場所</option><option value="hall">体育館・ホール</option><option value="building">建物</option><option value="parking">駐車場・入口</option><option value="other">その他</option></select></label>
+            <div class="four-cols"><label>左位置 %<input id="zoneX" type="number" min="0" max="100" step="0.1"></label><label>上位置 %<input id="zoneY" type="number" min="0" max="100" step="0.1"></label><label>幅 %<input id="zoneW" type="number" min="0.1" max="100" step="0.1"></label><label>高さ %<input id="zoneH" type="number" min="0.1" max="100" step="0.1"></label></div>
+            <div class="row-actions"><button type="submit" class="btn primary">この会場を保存</button><button type="button" id="attachDemo" class="btn light">セッション①でテスト</button><button type="button" id="deleteVenue" class="btn danger">削除</button></div>
+          </form>
+        </div>
+        <div class="editor-card"><h3>この図に登録した会場</h3><div id="mapZoneList" class="venue-list"></div></div>
       </div>
     </div>
   </div>
 
-  <div id="admin-programs" class="admin-tab">
-    <div class="admin-help">開始・終了・内容・会場を変更できます。同時間帯の複数会場も複数行で登録できます。</div>
-    <div id="adminProgramRows"></div><button id="addProgram" class="secondary full">＋ プログラムを追加</button>
+  <div class="admin-page" id="admin-program">
+    <div class="admin-intro">プログラムの「会場」は、先ほど登録した会場IDから選べます。テスト用の変更はこのブラウザに保存されます。</div>
+    <div id="adminPrograms"></div>
+    <button type="button" id="addProgram" class="btn light">＋ プログラムを追加</button>
   </div>
 
-  <div id="admin-stamps" class="admin-tab">
-    <div id="adminStampRows"></div>
-  </div>
-
-  <div id="admin-movies" class="admin-tab">
-    <div class="admin-help">動画はURL貼り付け方式です。</div>
-    <div id="adminMovieRows"></div><button id="addMovie" class="secondary full">＋ 動画を追加</button>
-  </div>
-
-  <div id="admin-posters" class="admin-tab">
-    <div class="admin-help">Firebase設定済みの場合、画像ファイルを選んでアップロードできます。Storageに保存し、URLをFirestoreへ登録します。</div>
-    <div class="form-card">
-      <label>ポスター名<input id="posterUploadTitle" type="text" placeholder="例：2026年度ポスター"></label>
-      <label>画像ファイル<input id="posterUploadFile" type="file" accept="image/*"></label>
-      <button id="uploadPoster" class="primary" type="button">Firebaseへアップロード</button>
-      <div id="uploadStatus" class="small-note"></div>
+  <div class="admin-page" id="admin-basic">
+    <div class="editor-card basic-card">
+      <h3>年度設定</h3>
+      <label>年度<input id="settingYear" type="text" maxlength="10"></label>
+      <label>開催日<input id="settingDate" type="date"></label>
+      <label>スローガン<input id="settingSlogan" type="text" maxlength="80"></label>
+      <button id="saveBasic" class="btn primary">年度設定を保存</button>
     </div>
-    <div id="adminPosterRows"></div>
-  </div>
-
-  <div id="admin-data" class="admin-tab">
-    <div class="form-card">
-      <h3>Firebase</h3>
-      <p>firebase-config.js に設定を入れると、設定全体をFirestore、ポスター画像をStorageに保存できます。未設定の場合はこの端末のlocalStorageで動作します。</p>
-      <button id="exportData" class="secondary">設定をJSONで書き出す</button>
-      <label class="file-label">JSONを読み込む<input id="importData" type="file" accept=".json,application/json"></label>
-      <button id="resetData" class="danger">初期設定に戻す</button>
+    <div class="editor-card basic-card">
+      <h3>テスト日時モード</h3><p class="muted">実際の開催日を待たずに、プログラムと会場案内の色が切り替わるか確認できます。</p>
+      <label class="check"><input type="checkbox" id="testEnabled"> テスト日時を使う</label>
+      <label>テスト日<input type="date" id="testDate"></label>
+      <label>テスト時刻<input type="time" id="testTime" step="60"></label>
+      <input id="testSlider" type="range" min="480" max="930" step="1" aria-label="テスト時刻を動かす">
+      <strong class="clock" id="testTimeText">09:25</strong>
+      <div class="quick-buttons"><button data-quick="09:25" class="btn light">09:25</button><button data-quick="10:05" class="btn light">10:05</button><button data-quick="13:35" class="btn light">13:35</button></div>
+      <p class="caption">変更は画面にすぐ反映されます。本番運用前はテストモードをOFFにしてください。</p>
     </div>
   </div>
 
-  <div class="admin-actions"><button id="saveAdmin" class="primary">設定を保存</button><button id="logoutAdmin" class="secondary">管理画面を閉じる</button></div>
+  <div class="admin-page" id="admin-data">
+    <div class="editor-card basic-card"><h3>保存・引き継ぎ</h3><p>現在の版では<strong>このブラウザ内に保存</strong>されます。JSONをバックアップしておけば別の端末へ設定を移せます。</p>
+      <button id="exportJson" class="btn primary">設定JSONを書き出す</button>
+      <label>設定JSONを読み込む<input type="file" id="importJson" accept=".json,application/json"></label>
+      <button id="resetAll" class="btn danger">試作データを初期化</button>
+      <p class="caption">Firebaseでの全端末共有・安全な管理者認証は次段階で実装します。固定パスワードは、この試作版の操作確認用であり、公開サイトの安全な認証ではありません。</p>
+    </div>
+  </div>
 </section>
-</main>
-
-<dialog id="loginDialog">
-<form id="loginForm"><h3>管理者ログイン</h3><p>管理者パスワードを入力してください。</p>
-<input id="loginPassword" type="password" autocomplete="current-password"><p id="loginError" class="error"></p>
-<div class="dialog-actions"><button type="button" id="loginCancel" class="secondary">キャンセル</button><button type="submit" class="primary">ログイン</button></div></form>
-</dialog>
-
-<dialog id="imageDialog"><button id="closeImageDialog">×</button><img id="dialogImage" alt=""><p id="dialogCaption"></p></dialog>
-<footer>OFES · Otoyo Festival</footer>
-
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
-<script src="firebase-config.js"></script>
-<script src="data.js"></script>
-<script src="app.js"></script>
-</body></html>
+<footer>OFES · 大豊学園 <span id="saveToast" aria-live="polite"></span></footer>
+</body>
+</html>

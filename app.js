@@ -1,124 +1,219 @@
-const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
-const ADMIN_PASSWORD="ofes0034";
-const CONFIG_KEY="ofes-config-v05", STAMP_KEY="ofes-stamps-v05";
-let data=JSON.parse(JSON.stringify(OFES_DEFAULT_DATA));
-let selectedMapId="campus";
-let db=null, storage=null, firebaseReady=false;
-
-function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
-function attr(v){return esc(v).replaceAll('"',"&quot;")}
-function isFirebaseConfigured(){
- const c=window.OFES_FIREBASE_CONFIG||{};
- return !!(c.apiKey&&c.projectId&&c.storageBucket&&c.appId);
+"use strict";
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const MAPS = [
+ {id:'campus', name:'学校全体図', src:'assets/maps/campus.svg', prefix:'A', building:'campus'},
+ {id:'zenki1', name:'前期棟1F', src:'assets/maps/zenki1.svg', prefix:'Z1', building:'zenki',floor:1},
+ {id:'zenki2', name:'前期棟2F', src:'assets/maps/zenki2.svg', prefix:'Z2', building:'zenki',floor:2},
+ {id:'koki1', name:'後期棟1F', src:'assets/maps/koki1.svg', prefix:'K1', building:'koki',floor:1},
+ {id:'koki2', name:'後期棟2F', src:'assets/maps/koki2.svg', prefix:'K2', building:'koki',floor:2},
+ {id:'koki3', name:'後期棟3F', src:'assets/maps/koki3.svg', prefix:'K3', building:'koki',floor:3}
+];
+const STORAGE_KEY='ofes-prototype-v08';
+const STAMP_KEY='ofes-stamp-v08';
+// 試作版の画面ロックのみ。Firebaseの安全な認証には使用しない。
+const DEMO_ADMIN_PASSWORD='ofes0034';
+const DEFAULT_DATA = {
+ year:'2026', eventDate:'2026-11-21', slogan:'挑戦・協働・創造',
+ test:{enabled:true,date:'2026-11-21',time:'09:25'},
+ zones:[],nextIds:{campus:1,zenki1:1,zenki2:1,koki1:1,koki2:1,koki3:1},
+ programs:[
+  {id:'p1',session:'other',start:'08:45',end:'09:05',title:'開会行事・アトラクション',zoneId:''},
+  {id:'p2',session:'s1',start:'09:20',end:'09:40',title:'セッション①（発表内容を登録）',zoneId:''},
+  {id:'p3',session:'s2',start:'09:50',end:'10:10',title:'セッション②（発表内容を登録）',zoneId:''},
+  {id:'p4',session:'s3',start:'10:20',end:'10:40',title:'セッション③（発表内容を登録）',zoneId:''},
+  {id:'p5',session:'s4',start:'10:50',end:'11:10',title:'セッション④（発表内容を登録）',zoneId:''},
+  {id:'p6',session:'afternoon',start:'13:32',end:'13:38',title:'午後のステージ発表（仮）',zoneId:''}
+ ],
+ gallery:{posters:[],videos:[],channelUrl:''}
+};
+const clone = (v)=>JSON.parse(JSON.stringify(v));
+const esc = (v)=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const byId=(id)=>document.getElementById(id);
+function getSaved(){try {const a=localStorage.getItem(STORAGE_KEY);return a?validData(JSON.parse(a)):clone(DEFAULT_DATA)}catch(e){console.warn(e);return clone(DEFAULT_DATA)}}
+function validData(v){
+ if(!v || typeof v!=='object'||!Array.isArray(v.zones)||!Array.isArray(v.programs))throw Error('データ形式が不正です');
+ const out={...clone(DEFAULT_DATA), ...v};
+ out.zones=v.zones.filter(z=>z && typeof z.id==='string' && MAPS.some(m=>m.id===z.mapId)).map(z=>({id:z.id,mapId:z.mapId,name:String(z.name||'会場'),note:String(z.note||''),kind:String(z.kind||'classroom'),x:bound(z.x,0,100),y:bound(z.y,0,100),w:bound(z.w,.1,100),h:bound(z.h,.1,100)}));
+ out.programs=v.programs.filter(p=>p&&typeof p.id==='string').map(p=>({id:p.id,session:String(p.session||'other'),start:String(p.start||'09:00'),end:String(p.end||'09:20'),title:String(p.title||'発表'),zoneId:String(p.zoneId||'')}));
+ out.nextIds={...clone(DEFAULT_DATA.nextIds),...(v.nextIds||{})};
+ out.test={...clone(DEFAULT_DATA.test),...(v.test||{})};
+ out.gallery={...clone(DEFAULT_DATA.gallery),...(v.gallery||{})};
+ return out;
 }
-async function initBackend(){
- if(isFirebaseConfigured()&&window.firebase){
-   try{
-     if(!firebase.apps.length) firebase.initializeApp(window.OFES_FIREBASE_CONFIG);
-     db=firebase.firestore(); storage=firebase.storage(); firebaseReady=true;
-     const snap=await db.collection("ofes").doc("current").get();
-     if(snap.exists) data={...data,...snap.data()};
-   }catch(e){console.warn(e);firebaseReady=false;loadLocal();}
- }else loadLocal();
- $("#firebaseState").textContent=firebaseReady?"Firebase接続中（共有設定）":"ローカル試作モード（Firebase未設定）";
- renderAll();
+function bound(v,a,b){const n=Number(v);return Number.isFinite(n)?Math.max(a,Math.min(b,n)):a}
+let state=getSaved();
+let visitorBuilding='campus',visitorFloor=1,visitorMap='campus',session='current',visitorSelected='';
+let visitorZoom=100, adminMap='campus',editId='',editDraft=null,drawMode='',dragStart=null,dragRect=null;
+let galleryTab='posters';
+function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true}catch(e){alert('ブラウザに保存できませんでした。容量・設定をご確認ください。');return false}}
+function toast(msg){byId('saveToast').textContent=msg;}
+function getZone(id){return state.zones.find(z=>z.id===id)}
+function getMap(id){return MAPS.find(m=>m.id===id)||MAPS[0]}
+function timeNum(t){const [h,m]=String(t).split(':').map(Number);return h*60+m}
+function dateISO(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`}
+function viewTime(){if(state.test.enabled){return {date:state.test.date,time:state.test.time,minute:timeNum(state.test.time),demo:true}}
+ const d=new Date();return{date:dateISO(d),time:`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,minute:d.getHours()*60+d.getMinutes(),demo:false};}
+function activePrograms(){const t=viewTime();return state.programs.filter(p=>t.date===state.eventDate && timeNum(p.start)<=t.minute && t.minute<timeNum(p.end))}
+function scheduledPrograms(){if(session==='current')return activePrograms();return state.programs.filter(p=>p.session===session)}
+function orderedPrograms(){return [...state.programs].sort((a,b)=>timeNum(a.start)-timeNum(b.start)||String(a.id).localeCompare(b.id))}
+function roomLabel(p){return getZone(p.zoneId)?.name||'会場未登録'}
+function renderHeader(){
+ byId('heroYear').textContent=state.year;
+ byId('heroSlogan').textContent=state.slogan;
+ const today=new Date(),end=new Date(state.eventDate+'T00:00:00'), start=new Date(dateISO(today)+'T00:00:00');
+ const dif=Math.round((end.getTime()-start.getTime())/86400000);
+ byId('countdown').textContent=dif>0?`開催まであと ${dif} 日`:dif===0?'いよいよ本日！':'今年のおおフェスは終了しました';
+ const v=viewTime();byId('previewTag').hidden=!v.demo;byId('previewTag').textContent=`TEST ${v.date} ${v.time}`;
 }
-function loadLocal(){try{const x=localStorage.getItem(CONFIG_KEY);if(x)data=JSON.parse(x)}catch{}}
-async function saveConfig(){
- localStorage.setItem(CONFIG_KEY,JSON.stringify(data));
- if(firebaseReady) await db.collection("ofes").doc("current").set(data);
-}
-function showPage(id){$$(".page").forEach(x=>x.classList.remove("active"));$("#"+id).classList.add("active");if(id==="map")autoSelectMap();window.scrollTo({top:0,behavior:"smooth"})}
-$$(".menu-card").forEach(b=>b.onclick=()=>showPage(b.dataset.page));$$(".back").forEach(b=>b.onclick=()=>showPage("home"));$$(".back-home").forEach(b=>b.onclick=()=>showPage("home"));
-
-function currentClock(){if(data.previewEnabled&&data.previewDateTime){const d=new Date(data.previewDateTime);if(!Number.isNaN(d.getTime()))return d}return new Date()}
-function dateISO(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
-function mins(t){const [h,m]=(t||"00:00").split(":").map(Number);return h*60+m}
-function room(id){return data.rooms.find(r=>r.id===id)}
-function roomName(id){return room(id)?.name||"場所未設定"}
-function sortedProgram(){return [...data.program].sort((a,b)=>mins(a.start)-mins(b.start)||(a.id-b.id))}
-function nowState(){const now=currentClock(),n=now.getHours()*60+now.getMinutes(),isEvent=dateISO(now)===data.eventDate,all=sortedProgram();return{now,n,isEvent,all,current:isEvent?all.filter(p=>n>=mins(p.start)&&n<mins(p.end)):[],upcoming:isEvent?all.filter(p=>n<mins(p.start)):[],finished:isEvent?all.filter(p=>n>=mins(p.end)):[]}}
-
-function renderHome(){
- $("#noticeText").textContent=data.notice||"";
- $("#testBadge").classList.toggle("hidden",!data.previewEnabled);
- const s=nowState(),box=$("#todaySummary");
- if(!s.isEvent){box.innerHTML=`<div class="summary-card summary-next"><b>開催日：${data.eventDate}</b></div>`;return}
- let h=s.current.length?`<div class="summary-card"><small>ただいま開催中</small><br>${s.current.map(p=>`<b>${p.start}–${p.end} ${esc(p.title)}</b> ／ ${esc(roomName(p.roomId))}`).join("<br>")}</div>`:`<div class="summary-card">現在開催中のプログラムはありません。</div>`;
- if(s.upcoming.length){const p=s.upcoming[0];h+=`<div class="summary-card summary-next"><small>次のプログラム</small><br><b>${p.start} ${esc(p.title)}</b> ／ ${esc(roomName(p.roomId))}</div>`}
- box.innerHTML=h;
-}
+function setTab(tab){$$('.nav').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));$$('.tab-view').forEach(v=>v.classList.toggle('active',v.id===`tab-${tab}`));if(tab==='venues')renderVisitorMap();window.scrollTo({top:0,behavior:'smooth'});}
+$$('.nav').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 function renderProgram(){
- const s=nowState();
- $("#programStatus").innerHTML=s.isEvent?`<div class="status-block"><h3>ただいま開催中</h3>${s.current.length?`<ul>${s.current.map(p=>`<li>${p.start}–${p.end} ${esc(p.title)} ／ ${esc(roomName(p.roomId))}</li>`).join("")}</ul>`:"<p>ありません。</p>"}</div><div class="status-block"><h3>このあと</h3>${s.upcoming.length?`<ul>${s.upcoming.slice(0,6).map(p=>`<li>${p.start} ${esc(p.title)} ／ ${esc(roomName(p.roomId))}</li>`).join("")}</ul>`:"<p>終了しました。</p>"}</div>`:`<div class="status-block">開催日：${data.eventDate}</div>`;
- $("#programList").innerHTML=s.all.map(p=>`<div class="program-item ${s.current.some(x=>x.id===p.id)?"current":""} ${s.finished.some(x=>x.id===p.id)?"finished":""}"><div class="program-time">${p.start}</div><div><div class="program-title">${esc(p.title)}${s.current.some(x=>x.id===p.id)?'<span class="tag">開催中</span>':""}</div><div class="program-place">${esc(roomName(p.roomId))} · ${p.start}–${p.end}</div></div></div>`).join("");
+ const v=viewTime(),active=activePrograms();let text=`現在の判定時刻：<strong>${esc(v.date)} ${esc(v.time)}</strong>`;
+ if(v.date!==state.eventDate)text+='　<span class="muted">開催日以外のため、開催中のプログラムはありません。</span>';
+ else text+=active.length?`<br>ただいま開催中：${active.map(p=>esc(p.title)).join('・')}`:'<br>現在開催中のプログラムはありません。';
+ byId('timeStatus').innerHTML=text;
+ byId('programList').innerHTML=orderedPrograms().map(p=>`<div class="program-row ${active.some(x=>x.id===p.id)?'on':''}">
+ <div class="time">${esc(p.start)}</div><div><strong>${esc(p.title)}</strong>${active.some(x=>x.id===p.id)?'<span class="tag">開催中</span>':''}
+ <div class="where">${esc(p.start)}〜${esc(p.end)}　${esc(roomLabel(p))} <button type="button" class="minilink" data-see="${esc(p.zoneId)}" ${p.zoneId?'':'disabled'}>会場を見る</button></div></div></div>`).join('');
+ $$('[data-see]').forEach(b=>b.onclick=()=>{if(!b.dataset.see)return;const z=getZone(b.dataset.see);if(!z)return;visitorBuilding=getMap(z.mapId).building;visitorFloor=getMap(z.mapId).floor||1;visitorMap=z.mapId;visitorSelected=z.id;session='current';setTab('venues');});
 }
-function autoSelectMap(){const s=nowState(),p=s.current[0]||s.upcoming[0];if(p&&room(p.roomId)?.mapId)selectedMapId=room(p.roomId).mapId;renderMap()}
-function campusZone(id){return{id,name:id==="zenki"?"前期課程棟":id==="koki"?"後期課程棟":id==="gym"?"体育館":"駐車場",x:id==="zenki"?55.4:id==="koki"?14.2:id==="gym"?33.3:10.8,y:id==="zenki"?39:id==="koki"?39:id==="gym"?71.9:14.6,w:id==="zenki"?30:id==="koki"?30:id==="gym"?33.4:78.4,h:id==="parking"?16.5:id==="gym"?20.7:27}}
-function renderMap(){
- const s=nowState(),m=data.maps.find(x=>x.id===selectedMapId)||data.maps[0];
- $("#mapTabs").innerHTML=data.maps.map(x=>`<button class="${x.id===m.id?"active":""}" data-map="${x.id}">${esc(x.name)}</button>`).join("");
- $("#mapImage").src=m.image;
- const cur=[],next=[];
- function add(list,target){
-  list.forEach(p=>{const r=room(p.roomId);if(!r)return;
-   if(m.id==="campus"){if(!r.campusGroup)return;const z=campusZone(r.campusGroup);target.push({...z,label:p.title});}
-   else if(r.mapId===m.id)target.push({...r,label:p.title});
-  });
- }
- add(s.current,cur);add(s.upcoming.slice(0,5),next);
- const curIds=new Set(cur.map(z=>z.id));
- $("#mapOverlay").innerHTML=cur.map(z=>`<div class="map-zone now" style="left:${z.x}%;top:${z.y}%;width:${z.w}%;height:${z.h}%"><span class="zone-label">${esc(z.name)}<br>${esc(z.label)}</span></div>`).join("")+next.filter(z=>!curIds.has(z.id)).map(z=>`<div class="map-zone next" style="left:${z.x}%;top:${z.y}%;width:${z.w}%;height:${z.h}%"><span class="zone-label">${esc(z.name)}<br>${esc(z.label)}</span></div>`).join("");
- $("#mapStatus").innerHTML=s.current.length?`<b>現在開催中</b><br>${s.current.map(p=>`${esc(p.title)} → ${esc(roomName(p.roomId))}`).join("<br>")}`:`<b>現在開催中のプログラムはありません。</b>`;
+function renderBuildingControls(){
+ byId('visitorBuilding').value=visitorBuilding;
+ const floorMap=MAPS.filter(m=>m.building===visitorBuilding&&m.floor);
+ const wrap=byId('visitorFloorWrap');wrap.hidden=!floorMap.length;
+ if(floorMap.length){byId('visitorFloor').innerHTML=floorMap.map(m=>`<option value="${m.floor}">${m.floor}F</option>`).join('');if(!floorMap.some(x=>x.floor===visitorFloor))visitorFloor=1;byId('visitorFloor').value=String(visitorFloor);visitorMap=floorMap.find(m=>m.floor===visitorFloor)?.id||floorMap[0].id;}else visitorMap='campus';
 }
-$("#mapTabs").onclick=e=>{const b=e.target.closest("[data-map]");if(b){selectedMapId=b.dataset.map;renderMap()}};
-
-function got(){try{return JSON.parse(localStorage.getItem(STAMP_KEY)||"[]")}catch{return[]}}
-function renderStamps(){const a=got();$("#stampList").innerHTML=data.stamps.map(s=>`<div class="stamp-card ${a.includes(s.id)?"got":""}"><div class="stamp-icon">⭐</div><h3>STAMP ${s.id}</h3><div>${a.includes(s.id)?"GET!":"未獲得"}</div><button class="hint-btn" data-h="${s.id}">ヒントを見る</button><p id="hint${s.id}" class="hint hidden">${esc(s.hint)}</p></div>`).join("");$("#stampCount").textContent=`${a.length} / 5 スタンプ`;$("#stampProgress").style.width=`${a.length/5*100}%`;$("#completeBox").classList.toggle("hidden",a.length<5)}
-$("#stampList").onclick=e=>{if(e.target.dataset.h)$("#hint"+e.target.dataset.h).classList.toggle("hidden")};$("#resetStamps").onclick=()=>{if(confirm("リセットしますか？")){localStorage.removeItem(STAMP_KEY);renderStamps()}};
-function renderMovies(){$("#movieList").innerHTML=data.movies.map(m=>`<article class="movie-card"><h3>${esc(m.title)}</h3><p>${esc(m.description||"")}</p><a href="${attr(m.url||"#")}" target="_blank" rel="noopener">動画を見る</a></article>`).join("")}
-function renderGallery(){$("#galleryGrid").innerHTML=data.posters.map((p,i)=>`<button class="poster" data-i="${i}"><img src="${attr(p.src)}"><span>${esc(p.title)}</span></button>`).join("")}
-$("#galleryGrid").onclick=e=>{const b=e.target.closest(".poster");if(!b)return;const p=data.posters[+b.dataset.i];$("#dialogImage").src=p.src;$("#dialogCaption").textContent=p.title;$("#imageDialog").showModal()};$("#closeImageDialog").onclick=()=>$("#imageDialog").close();
-
-function renderAll(){renderHome();renderProgram();renderMap();renderStamps();renderMovies();renderGallery()}
-const stampParam=Number(new URLSearchParams(location.search).get("stamp"));if(stampParam>=1&&stampParam<=5){const a=got();if(!a.includes(stampParam)){a.push(stampParam);localStorage.setItem(STAMP_KEY,JSON.stringify(a))}}
-
-$("#adminOpenBtn").onclick=()=>{$("#loginPassword").value="";$("#loginError").textContent="";$("#loginDialog").showModal()};$("#loginCancel").onclick=()=>$("#loginDialog").close();$("#loginForm").onsubmit=e=>{e.preventDefault();if($("#loginPassword").value===ADMIN_PASSWORD){$("#loginDialog").close();populateAdmin();showPage("admin")}else $("#loginError").textContent="パスワードが違います。"};
-$("#logoutAdmin").onclick=()=>showPage("home");$$(".admin-nav button").forEach(b=>b.onclick=()=>{$$(".admin-nav button").forEach(x=>x.classList.remove("active"));b.classList.add("active");$$(".admin-tab").forEach(x=>x.classList.remove("active"));$("#admin-"+b.dataset.adminTab).classList.add("active")});
-function roomOptions(sel){return data.rooms.map(r=>`<option value="${r.id}" ${r.id===sel?"selected":""}>${esc(r.name)}</option>`).join("")}
-function populateAdmin(){$("#aYear").value=data.year;$("#aDate").value=data.eventDate;$("#aNotice").value=data.notice;$("#aPreviewEnabled").checked=!!data.previewEnabled;{
-  const pv=(data.previewDateTime||`${data.eventDate}T09:25`).split("T");
-  $("#aPreviewDate").value=pv[0]||data.eventDate;
-  $("#aPreviewTime").value=(pv[1]||"09:25").slice(0,5);
-  const [hh,mm]=($("#aPreviewTime").value||"09:25").split(":").map(Number);
-  $("#aPreviewRange").value=hh*60+mm;
-  $("#aPreviewClockLabel").textContent=$("#aPreviewTime").value;
-}renderAdminPrograms();renderAdminStamps();renderAdminMovies();renderAdminPosters()}
-function renderAdminPrograms(){$("#adminProgramRows").innerHTML=data.program.map((p,i)=>`<div class="admin-row" data-type="program"><label>開始<input class="p-start" type="time" value="${p.start}"></label><label>終了<input class="p-end" type="time" value="${p.end}"></label><label class="wide">内容<input class="p-title" value="${attr(p.title)}"></label><label class="wide">場所<select class="p-room">${roomOptions(p.roomId)}</select></label><div class="row-actions"><button class="move-btn" data-up="${i}">↑</button><button class="move-btn" data-down="${i}">↓</button><button class="remove-btn" data-rp="${i}">削除</button></div></div>`).join("")}
-function renderAdminStamps(){$("#adminStampRows").innerHTML=data.stamps.map((s,i)=>`<div class="admin-row" data-type="stamp"><label>番号<input value="${s.id}" disabled></label><label class="wide">ヒント<input class="s-hint" value="${attr(s.hint)}"></label><label class="wide">獲得時メッセージ<input class="s-msg" value="${attr(s.message)}"></label></div>`).join("")}
-function renderAdminMovies(){$("#adminMovieRows").innerHTML=data.movies.map((m,i)=>`<div class="admin-row" data-type="movie"><label class="wide">タイトル<input class="m-title" value="${attr(m.title)}"></label><label class="wide">説明<input class="m-desc" value="${attr(m.description||"")}"></label><label class="wide">URL<input class="m-url" value="${attr(m.url||"")}"></label><div class="row-actions"><button class="remove-btn" data-rm="${i}">削除</button></div></div>`).join("")}
-function renderAdminPosters(){$("#adminPosterRows").innerHTML=data.posters.map((p,i)=>`<div class="admin-row"><label class="wide">タイトル<input value="${attr(p.title)}" disabled></label><label class="wide">画像URL<input value="${attr(p.src)}" disabled></label><div class="row-actions"><button class="remove-btn" data-rg="${i}">削除</button></div></div>`).join("")}
-function syncAdmin(){data.year=$("#aYear").value;data.eventDate=$("#aDate").value;data.notice=$("#aNotice").value;data.previewEnabled=$("#aPreviewEnabled").checked;data.previewDateTime=($("#aPreviewDate").value||data.eventDate)+"T"+($("#aPreviewTime").value||"09:25");data.program=[...$$('[data-type="program"]')].map((r,i)=>({id:data.program[i]?.id||Date.now()+i,start:r.querySelector(".p-start").value,end:r.querySelector(".p-end").value,title:r.querySelector(".p-title").value,roomId:r.querySelector(".p-room").value}));data.stamps=[...$$('[data-type="stamp"]')].map((r,i)=>({id:i+1,hint:r.querySelector(".s-hint").value,message:r.querySelector(".s-msg").value}));data.movies=[...$$('[data-type="movie"]')].map(r=>({title:r.querySelector(".m-title").value,description:r.querySelector(".m-desc").value,url:r.querySelector(".m-url").value}))}
-$("#saveAdmin").onclick=async()=>{syncAdmin();await saveConfig();renderAll();alert(firebaseReady?"Firebaseへ保存しました。":"この端末に保存しました。")};
-$("#addProgram").onclick=()=>{syncAdmin();data.program.push({id:Date.now(),start:"15:00",end:"15:10",title:"新しいプログラム",roomId:"gym"});renderAdminPrograms()};$("#addMovie").onclick=()=>{syncAdmin();data.movies.push({title:"新しい動画",description:"",url:"#"});renderAdminMovies()};
-document.addEventListener("click",e=>{if(e.target.dataset.testMinute!==undefined){
-  $("#aPreviewEnabled").checked=true;
-  const n=+e.target.dataset.testMinute, h=String(Math.floor(n/60)).padStart(2,"0"), m=String(n%60).padStart(2,"0");
-  $("#aPreviewTime").value=`${h}:${m}`; $("#aPreviewRange").value=n; $("#aPreviewClockLabel").textContent=`${h}:${m}`;
+byId('visitorBuilding').onchange=e=>{visitorBuilding=e.target.value;visitorFloor=1;visitorSelected='';renderVisitorMap()};
+byId('visitorFloor').onchange=e=>{visitorFloor=Number(e.target.value);visitorSelected='';renderVisitorMap()};
+byId('zoomIn').onclick=()=>{visitorZoom=Math.min(250,visitorZoom+25);renderVisitorMap()};
+byId('zoomOut').onclick=()=>{visitorZoom=Math.max(100,visitorZoom-25);renderVisitorMap()};
+function renderSessionButtons(){
+ const entries=[['current','現在'],['s1','S①'],['s2','S②'],['s3','S③'],['s4','S④']];
+ byId('sessionSwitch').innerHTML=entries.map(([id,label])=>`<button data-session="${id}" class="${id===session?'active':''}" aria-pressed="${id===session}">${label}</button>`).join('');
+ $$('[data-session]').forEach(b=>b.onclick=()=>{session=b.dataset.session;visitorSelected='';renderVisitorMap();});
 }
-if(e.target.dataset.rp!==undefined){syncAdmin();data.program.splice(+e.target.dataset.rp,1);renderAdminPrograms()}if(e.target.dataset.rm!==undefined){syncAdmin();data.movies.splice(+e.target.dataset.rm,1);renderAdminMovies()}if(e.target.dataset.rg!==undefined){data.posters.splice(+e.target.dataset.rg,1);renderAdminPosters()}if(e.target.dataset.up!==undefined){syncAdmin();let i=+e.target.dataset.up;if(i>0)[data.program[i-1],data.program[i]]=[data.program[i],data.program[i-1]];renderAdminPrograms()}if(e.target.dataset.down!==undefined){syncAdmin();let i=+e.target.dataset.down;if(i<data.program.length-1)[data.program[i+1],data.program[i]]=[data.program[i],data.program[i+1]];renderAdminPrograms()}});
-$("#uploadPoster").onclick=async()=>{const f=$("#posterUploadFile").files[0],title=$("#posterUploadTitle").value||f?.name;if(!f){$("#uploadStatus").textContent="画像ファイルを選択してください。";return}if(!firebaseReady){$("#uploadStatus").textContent="Firebase未設定です。firebase-config.js を設定してください。";return}try{$("#uploadStatus").textContent="アップロード中…";const ref=storage.ref().child(`ofes/posters/${data.year}/${Date.now()}_${f.name}`);await ref.put(f);const url=await ref.getDownloadURL();data.posters.push({title,src:url});await saveConfig();renderAdminPosters();renderGallery();$("#posterUploadFile").value="";$("#posterUploadTitle").value="";$("#uploadStatus").textContent="アップロードしました。"}catch(e){console.error(e);$("#uploadStatus").textContent="アップロードに失敗しました。Firebase設定・権限を確認してください。"}};
-$("#exportData").onclick=()=>{syncAdmin();const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`OFES_${data.year}.json`;a.click()};$("#importData").onchange=async e=>{try{data=JSON.parse(await e.target.files[0].text());await saveConfig();populateAdmin();renderAll()}catch{alert("読み込めませんでした。")}};$("#resetData").onclick=async()=>{if(confirm("初期設定に戻しますか？")){data=JSON.parse(JSON.stringify(OFES_DEFAULT_DATA));await saveConfig();populateAdmin();renderAll()}};
-
-function syncPreviewControlsFromRange(){
- const n=+$("#aPreviewRange").value,h=String(Math.floor(n/60)).padStart(2,"0"),m=String(n%60).padStart(2,"0");
- $("#aPreviewTime").value=`${h}:${m}`; $("#aPreviewClockLabel").textContent=`${h}:${m}`;
- data.previewEnabled=$("#aPreviewEnabled").checked; data.previewDateTime=($("#aPreviewDate").value||data.eventDate)+`T${h}:${m}`;
- renderAll();
+function zStyle(z){return `left:${bound(z.x,0,100)}%;top:${bound(z.y,0,100)}%;width:${bound(z.w,.1,100)}%;height:${bound(z.h,.1,100)}%;`}
+function zoneHtml(z,active,selected){const label=(z.w<12||z.h<12)?String(z.id).split('-').pop():z.name;return `<button type="button" class="zone ${active?'on':''} ${selected?'selected':''}" style="${zStyle(z)}" data-zone="${esc(z.id)}" title="${esc(z.name)}" aria-label="${esc(z.name)}"><span class="zone-caption">${esc(label)}</span></button>`}
+function renderVisitorMap(){
+ renderBuildingControls();renderSessionButtons();
+ const map=getMap(visitorMap);byId('mapTitle').textContent=map.name;
+ byId('visitorImage').src=map.src;byId('visitorImage').alt=map.name;
+ byId('visitorStage').style.width=`${visitorZoom}%`;byId('zoomValue').textContent=`${visitorZoom}%`;
+ const programs=scheduledPrograms(), activeIds=new Set(programs.map(p=>p.zoneId).filter(Boolean));
+ const zones=state.zones.filter(z=>z.mapId===map.id);
+ byId('visitorZones').innerHTML=zones.map(z=>zoneHtml(z,activeIds.has(z.id),z.id===visitorSelected)).join('');
+ $$(`#visitorZones [data-zone]`).forEach(b=>b.onclick=()=>{visitorSelected=b.dataset.zone;renderVisitorMap()});
+ const count=zones.filter(z=>activeIds.has(z.id)).length;
+ byId('mapSummary').textContent=session==='current'?`現在：${viewTime().time}　この図で使用中の会場：${count}か所`: `セッション${{s1:'①',s2:'②',s3:'③',s4:'④'}[session]}　この図で使用する会場：${count}か所`;
+ const detail=byId('venueDetail');
+ const z=getZone(visitorSelected);
+ if(!z){detail.innerHTML='<strong>会場をタップすると、予定を表示します。</strong><p class="muted">まだ会場が登録されていない場合は、管理者画面から範囲を登録してください。</p>';return}
+ const ps=orderedPrograms().filter(p=>p.zoneId===z.id);
+ detail.innerHTML=`<h3>${esc(z.name)} <span class="pill">${esc(z.id)}</span></h3>${z.note?`<p>${esc(z.note)}</p>`:''}
+ <p class="muted">${esc(map.name)}　${ps.length}件のプログラム</p>
+ ${ps.length?`<ul>${ps.map(p=>`<li><strong>${esc(p.start)}〜${esc(p.end)}</strong>　${esc(p.title)}</li>`).join('')}</ul>`:'<p>この会場のプログラムはまだ登録されていません。</p>'}
+ <p class="caption">リアクションボタンは次の開発段階で追加予定です。</p>`;
 }
-$("#aPreviewRange").addEventListener("input",syncPreviewControlsFromRange);
-$("#aPreviewTime").addEventListener("input",()=>{const [h,m]=($("#aPreviewTime").value||"00:00").split(":").map(Number);$("#aPreviewRange").value=h*60+m;$("#aPreviewClockLabel").textContent=$("#aPreviewTime").value;syncPreviewControlsFromRange()});
-$("#aPreviewDate").addEventListener("change",syncPreviewControlsFromRange);
-$("#aPreviewEnabled").addEventListener("change",syncPreviewControlsFromRange);
+function stampList(){try{return JSON.parse(localStorage.getItem(STAMP_KEY)||'[]')}catch{return[]}}
+function renderStamps(){const a=stampList();byId('stampProgress').textContent=`獲得スタンプ：${a.length} / 5`;
+ byId('stampCards').innerHTML=[1,2,3,4,5].map(i=>`<div class="stamp-item ${a.includes(i)?'got':''}"><div class="star">⭐</div><b>STAMP ${i}</b><small>${a.includes(i)?'取得済み':'未取得'}</small></div>`).join('');}
+function readStampFromUrl(){const v=new URLSearchParams(location.search).get('stamp'), n=Number(v);if(!Number.isInteger(n)||n<1||n>5)return;
+ const current=stampList();if(!current.includes(n)){current.push(n);localStorage.setItem(STAMP_KEY,JSON.stringify(current));}
+ renderStamps();setTab('stamp');}
+function safeYoutubeId(url){try{const u=new URL(url);const host=u.hostname.toLowerCase().replace(/^www\./,'');let id='';if(host==='youtu.be')id=u.pathname.split('/')[1];else if(host==='youtube.com'||host==='m.youtube.com'||host==='youtube-nocookie.com')id=u.searchParams.get('v')||u.pathname.match(/\/(?:embed|shorts|live)\/([^/?]+)/)?.[1]||'';return /^[A-Za-z0-9_-]{11}$/.test(id)?id:''}catch{return''}}
+function renderGallery(){const g=state.gallery;
+ $$('#galleryTabs button').forEach(b=>b.classList.toggle('active',b.dataset.gallery===galleryTab));
+ if(galleryTab==='posters')byId('galleryContents').innerHTML=g.posters.length?`<div class="gallery-posters">${g.posters.map(p=>`<div><img src="${esc(p.src)}" alt="${esc(p.title)}"><b>${esc(p.title)}</b></div>`).join('')}</div>`:'<p class="muted">ポスターはまだ登録されていません。</p>';
+ else byId('galleryContents').innerHTML=g.videos.length?g.videos.map(v=>{const id=safeYoutubeId(v.url);return `<div class="gallery-video"><h3>${esc(v.title)}</h3>${id?`<iframe loading="lazy" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" src="https://www.youtube-nocookie.com/embed/${id}" title="${esc(v.title)}"></iframe>`:'<p class="muted">動画のURLを確認してください。</p>'}</div>`}).join(''):'<p class="muted">動画はまだ登録されていません。</p>';
+ const link=byId('channelLink');try{const u=new URL(g.channelUrl);if(u.protocol==='https:'&&/(^|\.)youtube\.com$/.test(u.hostname)){link.innerHTML=`<a href="${esc(u.href)}" target="_blank" rel="noopener noreferrer">大豊学園YouTubeチャンネルへ ↗</a>`}else link.textContent=''}catch{link.textContent=''}
+}
+$$('#galleryTabs button').forEach(b=>b.onclick=()=>{galleryTab=b.dataset.gallery;renderGallery()});
+function renderPublic(){renderHeader();renderProgram();renderVisitorMap();renderStamps();renderGallery();}
 
-initBackend(); setInterval(()=>{renderHome();renderProgram();renderMap()},30000);
+// 管理画面へのアクセスはブラウザ試作用の簡易パスワード。外部の書込権限には用いない。
+byId('openAdmin').onclick=()=>{byId('loginModal').hidden=false;byId('adminPassword').value='';byId('loginError').textContent='';byId('adminPassword').focus()};
+byId('cancelLogin').onclick=()=>byId('loginModal').hidden=true;
+byId('loginForm').onsubmit=e=>{e.preventDefault();if(byId('adminPassword').value!==DEMO_ADMIN_PASSWORD){byId('loginError').textContent='パスワードが違います。';return}
+ byId('loginModal').hidden=true;byId('adminPanel').hidden=false;renderAdmin();};
+byId('closeAdmin').onclick=()=>{byId('adminPanel').hidden=true;drawMode='';renderPublic()};
+$$('#adminNav button').forEach(b=>b.onclick=()=>{const t=b.dataset.admin;$$('#adminNav button').forEach(x=>x.classList.toggle('active',x===b));$$('.admin-page').forEach(x=>x.classList.toggle('active',x.id===`admin-${t}`));if(t==='venues')renderEditor();if(t==='program')renderAdminPrograms();if(t==='basic')renderBasic();});
+function renderAdmin(){byId('adminMapSelect').innerHTML=MAPS.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');byId('adminMapSelect').value=adminMap;renderEditor();renderAdminPrograms();renderBasic();}
+byId('adminMapSelect').onchange=e=>{adminMap=e.target.value;editId='';editDraft=null;drawMode='';renderEditor()};
+function renderEditor(){
+ const m=getMap(adminMap);byId('adminMapSelect').value=adminMap;byId('adminMapImage').src=m.src;byId('adminMapImage').alt=m.name;
+ const stage=byId('adminStage');stage.classList.toggle('drawing',Boolean(drawMode));
+ byId('drawGuide').textContent=drawMode?`${drawMode==='new'?'新しい会場':'位置の再指定'}：図面上で教室の枠をドラッグして囲んでください。`:'登録済みの会場をタップすると、名前や位置を編集できます。';
+ const zones=state.zones.filter(z=>z.mapId===adminMap);
+ byId('adminZoneLayer').innerHTML=zones.map(z=>zoneHtml(z,false,z.id===editId)).join('')+(editDraft&&editDraft.mapId===adminMap&&!zones.some(z=>z.id===editDraft.id)?zoneHtml(editDraft,false,true):'');
+ $$('#adminZoneLayer [data-zone]').forEach(el=>{el.onclick=()=>selectZone(el.dataset.zone);});
+ byId('mapZoneList').innerHTML=zones.length?zones.map(z=>`<button type="button" class="${z.id===editId?'current':''}" data-list-zone="${esc(z.id)}"><b>${esc(z.name)}</b><small>${esc(z.id)}</small></button>`).join(''):'<p class="muted">まだ登録はありません。</p>';
+ $$('[data-list-zone]').forEach(b=>b.onclick=()=>selectZone(b.dataset.listZone));
+ renderEditForm();
+}
+function selectZone(id){const z=getZone(id);if(!z)return;drawMode='';editDraft=clone(z);editId=z.id;renderEditor()}
+function renderEditForm(){const v=editDraft;
+ byId('venueForm').hidden=!v;byId('emptyVenueNote').hidden=!!v;
+ if(!v)return;
+ byId('zoneId').value=v.id;byId('zoneName').value=v.name;byId('zoneNote').value=v.note||'';byId('zoneKind').value=v.kind||'classroom';
+ for(const [k,el] of [['x','zoneX'],['y','zoneY'],['w','zoneW'],['h','zoneH']])byId(el).value=Number(v[k]).toFixed(1);
+ byId('deleteVenue').disabled=!getZone(v.id);
+ byId('redrawVenue').disabled=false;
+}
+function newId(mapId){const map=getMap(mapId);const next=Math.max(1,Number(state.nextIds[mapId])||1);const id=map.prefix+'-'+String(next).padStart(2,'0');state.nextIds[mapId]=next+1;return id}
+byId('newVenue').onclick=()=>{editId='';editDraft=null;drawMode='new';renderEditor()};
+byId('redrawVenue').onclick=()=>{if(!editDraft){toast('先に会場を選んでください');return;}drawMode='redraw';renderEditor()};
+byId('cancelDrawing').onclick=()=>{drawMode='';editDraft=null;editId='';renderEditor()};
+const drawLayer=byId('drawLayer');
+function pointOf(e){const box=byId('adminStage').getBoundingClientRect();return {x:bound((e.clientX-box.left)/box.width*100,0,100),y:bound((e.clientY-box.top)/box.height*100,0,100)}}
+function rectFrom(a,b){let x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(a.x-b.x),h=Math.abs(a.y-b.y);return{x:+x.toFixed(2),y:+y.toFixed(2),w:+w.toFixed(2),h:+h.toFixed(2)}}
+function drawPreview(rect){drawLayer.innerHTML=`<div class="draw-preview" style="${zStyle(rect)}"></div>`}
+drawLayer.addEventListener('pointerdown',e=>{if(!drawMode)return;e.preventDefault();dragStart=pointOf(e);dragRect=null;drawLayer.setPointerCapture(e.pointerId);drawPreview({...dragStart,w:.1,h:.1});});
+drawLayer.addEventListener('pointermove',e=>{if(!dragStart)return;e.preventDefault();dragRect=rectFrom(dragStart,pointOf(e));drawPreview(dragRect);});
+function finishDraw(e){if(!dragStart)return;const r=rectFrom(dragStart,pointOf(e));dragStart=null;drawLayer.innerHTML='';if(r.w<.9||r.h<.9){toast('枠をもう少し大きくドラッグしてください');return}
+ if(drawMode==='new'){editDraft={id:newId(adminMap),mapId:adminMap,name:'新しい会場',note:'',kind:'classroom',...r};editId='';}
+ else if(drawMode==='redraw'&&editDraft){Object.assign(editDraft,r)}
+ drawMode='';renderEditor();toast('位置を指定しました。会場名を入力して保存してください。');}
+drawLayer.addEventListener('pointerup',finishDraw);
+drawLayer.addEventListener('pointercancel',()=>{dragStart=null;drawLayer.innerHTML=''});
+function readVenueForm(){if(!editDraft)return null;
+ const r={...editDraft,name:byId('zoneName').value.trim(),note:byId('zoneNote').value.trim(),kind:byId('zoneKind').value};
+ for(const [k,el] of [['x','zoneX'],['y','zoneY'],['w','zoneW'],['h','zoneH']])r[k]=bound(byId(el).value,k==='w'||k==='h'?.1:0,100);
+ if(r.x+r.w>100)r.w=+(100-r.x).toFixed(2);if(r.y+r.h>100)r.h=+(100-r.y).toFixed(2);
+ if(!r.name||r.w<.1||r.h<.1)return null;return r;}
+byId('venueForm').onsubmit=e=>{e.preventDefault();const r=readVenueForm();if(!r){alert('会場名と位置・サイズを確認してください。');return;}
+ const idx=state.zones.findIndex(z=>z.id===r.id);if(idx>=0)state.zones[idx]=r;else state.zones.push(r);
+ persist();editId=r.id;editDraft=clone(r);renderEditor();renderAdminPrograms();renderPublic();toast(`${r.name} を保存しました`);};
+byId('deleteVenue').onclick=()=>{const z=getZone(editDraft?.id);if(!z||!confirm(`「${z.name}」を削除しますか？この会場に割り当てられたプログラムの会場は未設定になります。`))return;
+ state.zones=state.zones.filter(x=>x.id!==z.id);state.programs.forEach(p=>{if(p.zoneId===z.id)p.zoneId=''});editId='';editDraft=null;persist();renderEditor();renderAdminPrograms();renderPublic();toast('削除しました');};
+for(const id of ['zoneX','zoneY','zoneW','zoneH'])byId(id).addEventListener('input',()=>{if(!editDraft)return;const r=readVenueForm();if(!r)return;Object.assign(editDraft,r);renderZoneGeometryOnly();});
+function renderZoneGeometryOnly(){const layer=byId('adminZoneLayer');const active=layer.querySelector(`.zone.selected`);if(active&&editDraft)active.style.cssText=zStyle(editDraft);}
+byId('attachDemo').onclick=()=>{const r=readVenueForm();if(!r)return alert('先に会場名・位置を入力してください。');
+ const idx=state.zones.findIndex(x=>x.id===r.id);if(idx>=0)state.zones[idx]=r;else state.zones.push(r);
+ const p=state.programs.find(x=>x.session==='s1');if(p)p.zoneId=r.id;
+ persist();editId=r.id;editDraft=clone(r);state.test.enabled=true;state.test.date=state.eventDate;state.test.time='09:25';renderAdmin();renderPublic();toast('セッション①（09:25）の表示テストを設定しました');};
+
+function roomOptions(sel){return `<option value="">（会場未登録）</option>`+state.zones.map(z=>`<option value="${esc(z.id)}" ${z.id===sel?'selected':''}>${esc(z.id)}｜${esc(z.name)}</option>`).join('')}
+function renderAdminPrograms(){byId('adminPrograms').innerHTML=`<div class="admin-program-list">${orderedPrograms().map(p=>`<div class="admin-program-row" data-program="${esc(p.id)}">
+ <label>開始<input type="time" data-pfield="start" value="${esc(p.start)}"></label><label>終了<input type="time" data-pfield="end" value="${esc(p.end)}"></label>
+ <label>内容<input data-pfield="title" maxlength="120" value="${esc(p.title)}"></label>
+ <label>会場<select data-pfield="zoneId">${roomOptions(p.zoneId)}</select></label>
+ <label>区分<select data-pfield="session"><option value="s1" ${p.session==='s1'?'selected':''}>セッション①</option><option value="s2" ${p.session==='s2'?'selected':''}>セッション②</option><option value="s3" ${p.session==='s3'?'selected':''}>セッション③</option><option value="s4" ${p.session==='s4'?'selected':''}>セッション④</option><option value="other" ${p.session==='other'?'selected':''}>その他</option><option value="afternoon" ${p.session==='afternoon'?'selected':''}>午後</option></select></label>
+ <button class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`).join('')}</div>`;
+ $$('[data-pfield]').forEach(el=>el.addEventListener('change',e=>{const row=e.target.closest('[data-program]'),p=state.programs.find(x=>x.id===row.dataset.program);if(!p)return;p[e.target.dataset.pfield]=e.target.value;persist();renderPublic();toast('プログラムを保存しました')}));
+ $$('[data-del-program]').forEach(el=>el.onclick=()=>{if(!confirm('このプログラムを削除しますか？'))return;state.programs=state.programs.filter(p=>p.id!==el.dataset.delProgram);persist();renderAdminPrograms();renderPublic()});
+}
+byId('addProgram').onclick=()=>{state.programs.push({id:'p'+Date.now(),session:'s1',start:'09:20',end:'09:40',title:'新しい発表',zoneId:''});persist();renderAdminPrograms();renderPublic()};
+function renderBasic(){byId('settingYear').value=state.year;byId('settingDate').value=state.eventDate;byId('settingSlogan').value=state.slogan;
+ byId('testEnabled').checked=!!state.test.enabled;byId('testDate').value=state.test.date;byId('testTime').value=state.test.time;byId('testSlider').value=timeNum(state.test.time);byId('testTimeText').textContent=state.test.time;}
+byId('saveBasic').onclick=()=>{const year=byId('settingYear').value.trim(),date=byId('settingDate').value;if(!year||!date)return alert('年度と開催日を入力してください');
+ state.year=year;state.eventDate=date;state.slogan=byId('settingSlogan').value.trim();persist();renderPublic();toast('年度設定を保存しました');};
+function updateTest(){state.test.enabled=byId('testEnabled').checked;state.test.date=byId('testDate').value||state.eventDate;state.test.time=byId('testTime').value||'09:25';
+ byId('testTimeText').textContent=state.test.time;byId('testSlider').value=timeNum(state.test.time);persist();renderPublic();}
+byId('testEnabled').onchange=updateTest;byId('testDate').onchange=updateTest;byId('testTime').oninput=updateTest;
+byId('testSlider').oninput=e=>{const n=Number(e.target.value);byId('testTime').value=`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;byId('testEnabled').checked=true;updateTest();};
+$$('[data-quick]').forEach(b=>b.onclick=()=>{byId('testTime').value=b.dataset.quick;byId('testDate').value=state.eventDate;byId('testEnabled').checked=true;updateTest();});
+byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:8,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
+byId('importJson').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const next=validData(parsed.data||parsed);if(!confirm('現在の設定を読み込んだデータで置き換えますか？'))return;state=next;persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('読み込みました')}catch(error){console.error(error);alert('JSON形式を確認してください。')}finally{e.target.value=''}};
+byId('resetAll').onclick=()=>{if(!confirm('登録した会場・プログラムなどの試作データをすべて初期化しますか？'))return;state=clone(DEFAULT_DATA);persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('初期化しました')};
+renderPublic();readStampFromUrl();setInterval(()=>{if(!state.test.enabled){renderHeader();renderProgram();if($('#tab-venues').classList.contains('active'))renderVisitorMap();}},30000);

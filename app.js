@@ -24,8 +24,7 @@ const DEFAULT_DATA = {
   {id:'p4',session:'s3',start:'10:20',end:'10:40',title:'セッション③（発表内容を登録）',zoneId:''},
   {id:'p5',session:'s4',start:'10:50',end:'11:10',title:'セッション④（発表内容を登録）',zoneId:''},
   {id:'p6',session:'afternoon',start:'13:32',end:'13:38',title:'午後のステージ発表（仮）',zoneId:''}
- ],
- gallery:{posters:[],videos:[],channelUrl:''}
+ ]
 };
 const clone = (v)=>JSON.parse(JSON.stringify(v));
 const esc = (v)=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -38,14 +37,13 @@ function validData(v){
  out.programs=v.programs.filter(p=>p&&typeof p.id==='string').map(p=>({id:p.id,session:String(p.session||'other'),start:String(p.start||'09:00'),end:String(p.end||'09:20'),title:String(p.title||'発表'),zoneId:String(p.zoneId||'')}));
  out.nextIds={...clone(DEFAULT_DATA.nextIds),...(v.nextIds||{})};
  out.test={...clone(DEFAULT_DATA.test),...(v.test||{})};
- out.gallery={...clone(DEFAULT_DATA.gallery),...(v.gallery||{})};
+ delete out.gallery; // Legacy backups may still contain gallery data; ignore it.
  return out;
 }
 function bound(v,a,b){const n=Number(v);return Number.isFinite(n)?Math.max(a,Math.min(b,n)):a}
 let state=getSaved();
 let visitorBuilding='campus',visitorFloor=1,visitorMap='campus',session='current',visitorSelected='';
 let visitorZoom=100, adminMap='campus',editId='',editDraft=null,drawMode='',dragStart=null,dragRect=null;
-let galleryTab='posters';
 function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true}catch(e){alert('ブラウザに保存できませんでした。容量・設定をご確認ください。');return false}}
 function toast(msg){byId('saveToast').textContent=msg;}
 function getZone(id){return state.zones.find(z=>z.id===id)}
@@ -121,15 +119,7 @@ function renderStamps(){const a=stampList();byId('stampProgress').textContent=`�
 function readStampFromUrl(){const v=new URLSearchParams(location.search).get('stamp'), n=Number(v);if(!Number.isInteger(n)||n<1||n>5)return;
  const current=stampList();if(!current.includes(n)){current.push(n);localStorage.setItem(STAMP_KEY,JSON.stringify(current));}
  renderStamps();setTab('stamp');}
-function safeYoutubeId(url){try{const u=new URL(url);const host=u.hostname.toLowerCase().replace(/^www\./,'');let id='';if(host==='youtu.be')id=u.pathname.split('/')[1];else if(host==='youtube.com'||host==='m.youtube.com'||host==='youtube-nocookie.com')id=u.searchParams.get('v')||u.pathname.match(/\/(?:embed|shorts|live)\/([^/?]+)/)?.[1]||'';return /^[A-Za-z0-9_-]{11}$/.test(id)?id:''}catch{return''}}
-function renderGallery(){const g=state.gallery;
- $$('#galleryTabs button').forEach(b=>b.classList.toggle('active',b.dataset.gallery===galleryTab));
- if(galleryTab==='posters')byId('galleryContents').innerHTML=g.posters.length?`<div class="gallery-posters">${g.posters.map(p=>`<div><img src="${esc(p.src)}" alt="${esc(p.title)}"><b>${esc(p.title)}</b></div>`).join('')}</div>`:'<p class="muted">ポスターはまだ登録されていません。</p>';
- else byId('galleryContents').innerHTML=g.videos.length?g.videos.map(v=>{const id=safeYoutubeId(v.url);return `<div class="gallery-video"><h3>${esc(v.title)}</h3>${id?`<iframe loading="lazy" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" src="https://www.youtube-nocookie.com/embed/${id}" title="${esc(v.title)}"></iframe>`:'<p class="muted">動画のURLを確認してください。</p>'}</div>`}).join(''):'<p class="muted">動画はまだ登録されていません。</p>';
- const link=byId('channelLink');try{const u=new URL(g.channelUrl);if(u.protocol==='https:'&&/(^|\.)youtube\.com$/.test(u.hostname)){link.innerHTML=`<a href="${esc(u.href)}" target="_blank" rel="noopener noreferrer">大豊学園YouTubeチャンネルへ ↗</a>`}else link.textContent=''}catch{link.textContent=''}
-}
-$$('#galleryTabs button').forEach(b=>b.onclick=()=>{galleryTab=b.dataset.gallery;renderGallery()});
-function renderPublic(){renderHeader();renderProgram();renderVisitorMap();renderStamps();renderGallery();}
+function renderPublic(){renderHeader();renderProgram();renderVisitorMap();renderStamps();}
 
 // 管理画面へのアクセスはブラウザ試作用の簡易パスワード。外部の書込権限には用いない。
 byId('openAdmin').onclick=()=>{byId('loginModal').hidden=false;byId('adminPassword').value='';byId('loginError').textContent='';byId('adminPassword').focus()};
@@ -213,7 +203,7 @@ function updateTest(){state.test.enabled=byId('testEnabled').checked;state.test.
 byId('testEnabled').onchange=updateTest;byId('testDate').onchange=updateTest;byId('testTime').oninput=updateTest;
 byId('testSlider').oninput=e=>{const n=Number(e.target.value);byId('testTime').value=`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;byId('testEnabled').checked=true;updateTest();};
 $$('[data-quick]').forEach(b=>b.onclick=()=>{byId('testTime').value=b.dataset.quick;byId('testDate').value=state.eventDate;byId('testEnabled').checked=true;updateTest();});
-byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:8,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
+byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:9,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
 byId('importJson').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const next=validData(parsed.data||parsed);if(!confirm('現在の設定を読み込んだデータで置き換えますか？'))return;state=next;persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('読み込みました')}catch(error){console.error(error);alert('JSON形式を確認してください。')}finally{e.target.value=''}};
 byId('resetAll').onclick=()=>{if(!confirm('登録した会場・プログラムなどの試作データをすべて初期化しますか？'))return;state=clone(DEFAULT_DATA);persist();adminMap='campus';editId='';editDraft=null;renderAdmin();renderPublic();toast('初期化しました')};
 renderPublic();readStampFromUrl();setInterval(()=>{if(!state.test.enabled){renderHeader();renderProgram();if($('#tab-venues').classList.contains('active'))renderVisitorMap();}},30000);

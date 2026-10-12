@@ -1,31 +1,57 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // OFES の管理者 (Firebase Authentication の UID)。
-    // 学校アカウントへの移行時は、新しい管理者UIDに更新してください。
     function isAdmin() {
       return request.auth != null
-        && request.auth.uid == "XxawqhAFz0SgpzYQbMKMdWQDBNx2";
+        && request.auth.uid == 'XxawqhAFz0SgpzYQbMKMdWQDBNx2';
     }
 
-    // 公開済みの会場・プログラム・年度設定。来場者はログイン不要で閲覧可。
-    // 公開・更新・削除できるのは管理者だけ。
+    function isSelf(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // 公開するのはプログラム・会場情報・受付期限のみ。
     match /published/site {
       allow get: if true;
       allow list: if false;
       allow create, update, delete: if isAdmin();
     }
 
-    // Ver.1.0からの読み取り診断用（書き込み不要）。
+    // 旧接続診断（管理者だけが読み取り可能）。
     match /ofes_connection_tests/{documentId} {
       allow get: if isAdmin();
       allow list, create, update, delete: if false;
     }
 
-    // それ以外の場所は今回の段階ではすべて拒否。
-    // リアクション機能は別段階で専用ルールを検討する。
+    // 来場者の選択は、イベント日×プログラム×認証UIDごとに1件。
+    match /reactionEvents/{eventDate}/programs/{programId}/votes/{voterUid} {
+      function sitePath() {
+        return /databases/$(database)/documents/published/site;
+      }
+      function isAccepting() {
+        return exists(sitePath())
+          && get(sitePath()).data.eventDate == eventDate
+          && get(sitePath()).data.reactionDeadlineAt is timestamp
+          && request.time < get(sitePath()).data.reactionDeadlineAt
+          && programId in get(sitePath()).data.programIds;
+      }
+      function validReaction() {
+        return request.resource.data.keys().hasOnly(['selected', 'updatedAt', 'version'])
+          && request.resource.data.keys().hasAll(['selected', 'updatedAt', 'version'])
+          && request.resource.data.version == 1
+          && request.resource.data.selected is list
+          && request.resource.data.selected.size() >= 1
+          && request.resource.data.selected.size() <= 5
+          && request.resource.data.selected.hasOnly(['good', 'aha', 'amazing', 'fun', 'cheer'])
+          && request.resource.data.updatedAt == request.time;
+      }
+      // 本人は自分の分だけ読める。管理者は集計のため全件を読める。
+      allow get: if isAdmin() || isSelf(voterUid);
+      allow list: if isAdmin();
+      allow create, update: if isSelf(voterUid) && isAccepting() && validReaction();
+      allow delete: if isSelf(voterUid) && isAccepting();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

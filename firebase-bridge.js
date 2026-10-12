@@ -1,12 +1,12 @@
 /**
- * OFES Ver.1.3: Google Authentication + Firestore published content.
+ * OFES Ver.1.8: Google Authentication + Firestore published content.
  * 管理者はローカル下書きを明示的に公開する。来場者は認証なしで公開データを購読する。
  * セキュリティ境界は Firebase Security Rules（クライアントのパスワードではない）。
  */
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import {getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-        browserSessionPersistence, setPersistence} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-import {getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+        browserLocalPersistence, signInAnonymously, setPersistence} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import {getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp, Timestamp} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {firebaseConfig} from './firebase-config.js';
 
 const el = (id) => document.getElementById(id);
@@ -24,6 +24,9 @@ const publishButton = el('firebasePublish');
 const loadButton = el('firebaseLoadDraft');
 const publishMessage = el('firebasePublishMessage');
 let isLoggedIn=false, isBusy=false, publishedData=null, lastPublishTime=null, cloudLoaded=false, cloudError=false;
+const REACTION_KEYS=['good','aha','amazing','fun','cheer'];
+const REACTION_LABELS=['👍 よかった','💡 なるほど','✨ すごい','😊 楽しかった','🙌 応援したい'];
+let latestStats=null;
 
 function status(node, text, kind='info') {
  if(!node)return;
@@ -72,11 +75,120 @@ try{
  const auth=getAuth(app);
  const db=getFirestore(app);
  const publicDoc=doc(db,'published','site');
- await setPersistence(auth,browserSessionPersistence);
+ // 匿名利用者のUIDを再読み込み後も保つ。Google管理者も端末で認証状態を保持する。
+ await setPersistence(auth,browserLocalPersistence);
  status(sdkStatus,`接続準備完了（${app.options.projectId}）`,'ok');
  status(authStatus,'ログイン状態を確認中…','loading');
  status(authMessage,'Googleログイン後、UIDと管理者権限を確認できます。');
  setUiState();
+
+
+ // 来場者用: 1つの発表につき1UID=1文書、5種類を配列として保存。
+ // 管理者の集計以外では他人の投票を読み取れない。
+ const voteDoc=(date,programId,uid)=>doc(db,'reactionEvents',date,'programs',programId,'votes',uid);
+ const selectionCacheKey='ofes-reaction-choices-v14';
+ function readSelectionCache(){try{return JSON.parse(localStorage.getItem(selectionCacheKey)||'{}')}catch{return{}}}
+ function cacheSelection(date,programId,uid,selected){
+  try{const data=readSelectionCache();data[`${date}|${programId}|${uid}`]=selected;localStorage.setItem(selectionCacheKey,JSON.stringify(data));}catch(error){console.warn(error)}
+ }
+ function emitSelection(programId,selected,uid){
+  window.dispatchEvent(new CustomEvent('ofes-reaction-selection',{detail:{programId,selected,uid}}));
+ }
+ function emitNotice(programId,message){
+  window.dispatchEvent(new CustomEvent('ofes-reaction-notice',{detail:{programId,message}}));
+ }
+ function publishStatus(){
+  if(!publishedData?.reactionDeadlineAt)return {ok:false,message:'リアクションの受付準備中です。管理者がVer.1.4で再公開してください。'};
+  const end=publishedData.reactionDeadlineAt.toDate?.();
+  if(!(end instanceof Date)||!Number.isFinite(end.getTime()))return {ok:false,message:'受付期限が読み取れません。'};
+  if(Date.now()>=end.getTime())return {ok:false,message:'リアクションの受付は終了しました。'};
+  return {ok:true};
+ }
+ const reactionBusy=new Set();
+ window.OFESReactions={
+  toggle:async(programId,key)=>{
+   if(!REACTION_KEYS.includes(key)||reactionBusy.has(programId))return;
+   reactionBusy.add(programId);
+   emitNotice(programId,'送信しています…');
+   try{
+    const status=publishStatus();if(!status.ok)throw Error(status.message);
+    const eventDate=publishedData.eventDate;
+    if(!publishedData.programs?.some(p=>p.id===programId))throw Error('公開されていない発表です。');
+    let user=auth.currentUser;
+    if(!user)user=(await signInAnonymously(auth)).user;
+    const ref=voteDoc(eventDate,programId,user.uid);
+    // 端末間の変更や、直前の取り消しを反映した正確な状態を取得してから変更する。
+    const previous=await getDoc(ref);
+    const current=previous.exists()&&Array.isArray(previous.data().selected)?previous.data().selected:[];
+    const next=current.includes(key)?current.filter(x=>x!==key):[...current,key];
+    if(next.length)await setDoc(ref,{selected:next,version:1,updatedAt:serverTimestamp()});
+    else if(previous.exists())await deleteDoc(ref);
+    cacheSelection(eventDate,programId,user.uid,next);
+    emitSelection(programId,next,user.uid);
+    emitNotice(programId,`保存しました。${next.length?`${next.length}種類を選択中。押し直すと取り消せます。`:'リアクションを取り消しました。'}`);
+   }catch(error){
+    let message=errorText(error);
+    if(error?.code==='auth/admin-restricted-operation'||error?.code==='auth/operation-not-allowed')message='Firebase Authenticationの「匿名」を有効にしてください。';
+    if(error?.code==='permission-denied')message='送信できません。Firestoreのリアクション用ルール・受付期限を確認してください。';
+    emitNotice(programId,`送信できませんでした：${message}`);
+   }finally{reactionBusy.delete(programId);}
+  }
+ };
+ // 同じ端末での「選択済み」の表示を再現。送信時には必ずサーバーの本人文書を照会。
+ function restoreCachedReactions(){
+  const uid=auth.currentUser?.uid, date=publishedData?.eventDate;if(!uid||!date)return;
+  const cache=readSelectionCache();
+  for(const p of publishedData.programs||[]){
+   const sel=cache[`${date}|${p.id}|${uid}`];
+   if(Array.isArray(sel))emitSelection(p.id,sel,uid);
+  }
+ }
+ function renderReactionStatsOptions(){
+  const selector=el('reactionStatsProgram');if(!selector)return;
+  const chosen=selector.value;
+  const ps=publishedData?.programs||[];
+  selector.replaceChildren(new Option('発表を選んでください',''));
+  for(const p of ps)selector.add(new Option(`${p.start} ${p.grade?`${p.grade} `:''}${p.title}`,p.id));
+  if(ps.some(p=>p.id===chosen))selector.value=chosen;
+ }
+ const statsButton=el('reactionStatsLoad'),statsOut=el('reactionStatsResult'),statsMessage=el('reactionStatsMessage');
+ statsButton.addEventListener('click',async()=>{
+  const programId=el('reactionStatsProgram').value;
+  const p=publishedData?.programs?.find(x=>x.id===programId);
+  if(!p){statsMessage.textContent='集計する発表を選択してください。';return;}
+  if(!auth.currentUser?.providerData?.some(x=>x.providerId==='google.com')){
+   statsMessage.textContent='管理者Googleログインが必要です。';return;
+  }
+  statsButton.disabled=true;statsOut.hidden=true;el('reactionStatsExport').disabled=true;
+  statsMessage.textContent='Firestoreから集計しています…';
+  try{
+   const votes=await getDocs(collection(db,'reactionEvents',publishedData.eventDate,'programs',programId,'votes'));
+   const counts=Object.fromEntries(REACTION_KEYS.map(k=>[k,0]));
+   for(const snap of votes.docs){const choices=snap.data().selected||[];for(const k of REACTION_KEYS){if(choices.includes(k))counts[k]++;}}
+   statsOut.replaceChildren();
+   const heading=document.createElement('strong');heading.textContent=`${p.grade?`${p.grade} `:''}${p.title}`;statsOut.append(heading);
+   const total=document.createElement('p');total.textContent=`回答者数：${votes.size}（1人が複数種類を選択できます）`;statsOut.append(total);
+   REACTION_KEYS.forEach((key,i)=>{
+    const row=document.createElement('div');row.className='reaction-stat-row';
+    const label=document.createElement('span');label.textContent=REACTION_LABELS[i];
+    const n=document.createElement('strong');n.textContent=`${counts[key]} 件`;
+    row.append(label,n);statsOut.append(row);
+   });
+   latestStats={programTitle:`${p.grade?`${p.grade} `:''}${p.title}`,year:publishedData.year,eventDate:publishedData.eventDate,counts,respondents:votes.size};
+   statsOut.hidden=false;el('reactionStatsExport').disabled=false;
+   statsMessage.textContent='集計しました。順位付けは行っていません。';
+  }catch(error){statsMessage.textContent=`集計できませんでした：${errorText(error)}`;}
+  finally{statsButton.disabled=false;}
+ });
+ el('reactionStatsExport').addEventListener('click',()=>{
+  if(!latestStats)return;
+  const rows=[['発表',latestStats.programTitle],['年度',latestStats.year],['開催日',latestStats.eventDate],['回答者数',latestStats.respondents],...REACTION_KEYS.map((k,i)=>[REACTION_LABELS[i],latestStats.counts[k]])];
+  const csv='\ufeff'+rows.map(cols=>cols.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');a.href=url;a.download=`OFES_リアクション集計_${latestStats.eventDate}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
+ });
+ window.addEventListener('ofes-cloud-published',()=>{restoreCachedReactions();});
+ onAuthStateChanged(auth,()=>{restoreCachedReactions();});
 
  // Firestore listener: visitors require no sign-in. Fetches once and listens for publication updates.
  onSnapshot(publicDoc, (snapshot)=>{
@@ -84,6 +196,7 @@ try{
   lastPublishTime=publishedData?.updatedAt?.toDate?.().toLocaleString('ja-JP')||null;
   cloudLoaded=true;cloudError=false;
   setUiState();
+  renderReactionStatsOptions();
   window.dispatchEvent(new CustomEvent('ofes-cloud-published',{detail:{data:publishedData}}));
  },(error)=>{
   cloudError=true;cloudLoaded=false;setUiState();
@@ -91,24 +204,26 @@ try{
  });
 
  onAuthStateChanged(auth, user=>{
-  isLoggedIn=!!user;
-  signInButton.hidden=!!user;
+  const isGoogle=!!user?.providerData?.some(provider=>provider.providerId==='google.com');
+  isLoggedIn=isGoogle;
+  signInButton.hidden=isGoogle;
   signInButton.disabled=false;
-  signOutButton.hidden=!user;
-  readButton.disabled=!user;
-  account.hidden=!user;
+  signOutButton.hidden=!isGoogle;
+  readButton.disabled=!isGoogle;
+  account.hidden=!isGoogle;
+  window.dispatchEvent(new CustomEvent('ofes-reaction-uid',{detail:{uid:user?.uid||''}}));
   setUiState();
-  status(readResult,user?'Firestoreの読み取り権限を確認できます。':'Googleでログインすると確認できます。');
-  if(user){
+  status(readResult,isGoogle?'Firestoreの読み取り権限を確認できます。':'管理者Googleログイン後に確認できます。');
+  if(isGoogle){
    status(authStatus,'Googleログイン成功','ok');
    el('firebaseUserEmail').textContent=user.email||'メールアドレスなし';
    el('firebaseUserUid').value=user.uid;
    status(authMessage,'ログインできました。Firestoreへの書き込み可否はセキュリティルールで確認されます。','ok');
    status(publishMessage,'編集内容を公開する前に、JSONバックアップと内容の確認をおすすめします。');
   }else{
-   status(authStatus,'未ログイン');
+   status(authStatus,user?.isAnonymous?'来場者として匿名認証中':'管理者は未ログイン');
    el('firebaseUserEmail').textContent='';el('firebaseUserUid').value='';
-   status(authMessage,'「Googleでログイン」で管理者のGoogleアカウントを選択してください。');
+   status(authMessage,'「Googleでログイン」で管理者のGoogleアカウントを選択してください。来場者の匿名認証では公開権限は付きません。');
    status(publishMessage,'管理者Googleログイン後に公開できます。');
   }
  },error=>{
@@ -148,11 +263,15 @@ try{
   const payload=window.OFESCloud?.exportPublished?.();
   if(!payload)return status(publishMessage,'下書きが取得できません。画面を再読み込みしてください。','error');
   const before=publishedData?`現在の公開データ（会場${publishedData.zones?.length||0}か所）を上書きします。`:'初めての公開です。';
-  if(!confirm(`${before}\n\n年度：${payload.year}\n会場：${payload.zones.length}か所\nプログラム：${payload.programs.length}件\n\nこの内容を来場者向けに公開してよろしいですか？`))return;
+  const warning=publishedData?.zones?.length>payload.zones.length?'\n【注意】現在の公開会場数より下書きの会場数が少なくなっています。ほかの端末で教室登録を進めている場合は、公開しないでください。\n':'';
+  if(!confirm(`${before}\n${warning}\n年度：${payload.year}\n会場：${payload.zones.length}か所\nプログラム：${payload.programs.length}件\n受付終了：${payload.reactionDeadline}（日本時間）\n\nこの内容を来場者向けに公開してよろしいですか？`))return;
   isBusy=true;setUiState();status(publishMessage,'Firestoreへ公開しています。画面を閉じずにお待ちください…','loading');
   try{
    // Firestore Rules: only allow this path's write for the admin UID.
-   await setDoc(publicDoc,{...payload,updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid});
+   const deadlineDate=new Date(`${payload.reactionDeadline}:00+09:00`);
+   if(!Number.isFinite(deadlineDate.getTime()))throw Error('リアクション受付終了日時の形式が正しくありません。');
+   // ファイル内の旧スキーマは変えず、公開ドキュメントにだけ timestamp を追加する。
+   await setDoc(publicDoc,{...payload,programIds:[...new Set(payload.programs.map(p=>p.id))],reactionDeadlineAt:Timestamp.fromDate(deadlineDate),updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid});
    status(publishMessage,'Firestoreへの公開が完了しました。別の端末でも同じ内容を閲覧できます。','ok');
   }catch(error){status(publishMessage,`公開に失敗：${errorText(error)}`,'error');}
   finally{isBusy=false;setUiState();}

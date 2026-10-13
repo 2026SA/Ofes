@@ -9,7 +9,7 @@ const MAPS = [
  {id:'koki2', name:'後期棟2F', src:'assets/maps/koki2.svg', prefix:'K2', building:'koki',floor:2},
  {id:'koki3', name:'後期棟3F', src:'assets/maps/koki3.svg', prefix:'K3', building:'koki',floor:3}
 ];
-const STORAGE_KEY='ofes-prototype-v08'; // v0.8〜v1.2から維持
+const STORAGE_KEY='ofes-prototype-v08'; // 旧版から維持
 const STAMP_KEY='ofes-stamp-v08';
 // 試作版の画面ロックのみ。Firebaseの安全な認証には使用しない。
 const DEMO_ADMIN_PASSWORD='ofes0034';
@@ -29,14 +29,34 @@ const DEFAULT_DATA = {
  sessions:JSON.parse(JSON.stringify(DEFAULT_SESSIONS)),
  zones:[],nextIds:{campus:1,zenki1:1,zenki2:1,koki1:1,koki2:1,koki3:1},
  programs:[
-  {id:'p1',session:'other',start:'08:45',end:'09:05',grade:'',title:'開会行事・アトラクション',zoneId:''},
-  {id:'p6',session:'afternoon',start:'13:32',end:'13:38',grade:'',title:'午後のステージ発表（仮）',zoneId:''}
+  {id:'p1',session:'other',start:'08:45',end:'09:05',grade:'',group:'',title:'開会行事・アトラクション',zoneId:''},
+  {id:'p6',session:'afternoon',start:'13:32',end:'13:38',grade:'',group:'',title:'午後のステージ発表（仮）',zoneId:''}
  ]
 };
 const clone = (v)=>JSON.parse(JSON.stringify(v));
 const esc = (v)=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const byId=(id)=>document.getElementById(id);
 function getSaved(){try {const a=localStorage.getItem(STORAGE_KEY);return a?validData(JSON.parse(a)):clone(DEFAULT_DATA)}catch(e){console.warn(e);return clone(DEFAULT_DATA)}}
+function reactionProgramKey(p){
+ return `${String(p.grade||'').trim()}|${String(p.group||'').trim()}|${String(p.title||'').trim()}`.toLocaleLowerCase('ja');
+}
+function syncReactionGroups(target){
+ const programs=target?.programs||[];
+ const eligible=programs.filter(p=>SESSION_IDS.includes(p.session)||p.session==='afternoon');
+ const usage=new Map();
+ for(const p of eligible){
+  if(!p.reactionId)continue;
+  const key=reactionProgramKey(p);if(!usage.has(p.reactionId))usage.set(p.reactionId,new Set());usage.get(p.reactionId).add(key);
+ }
+ const byKey=new Map();
+ for(const p of eligible){const key=reactionProgramKey(p);if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(p);}
+ for(const [key,items] of byKey){
+  const stable=items.map(p=>p.reactionId).find(id=>id && usage.get(id)?.size===1);
+  const chosen=stable||items[0]?.id||`reaction-${Date.now()}`;
+  items.forEach(p=>p.reactionId=chosen);
+ }
+ for(const p of programs){if(!(SESSION_IDS.includes(p.session)||p.session==='afternoon')&&!p.reactionId)p.reactionId=p.id;}
+}
 function validData(v){
  if(!v || typeof v!=='object'||!Array.isArray(v.zones)||!Array.isArray(v.programs))throw Error('データ形式が不正です');
  const out={...clone(DEFAULT_DATA), ...v};
@@ -54,22 +74,11 @@ function validData(v){
  out.programs=v.programs.filter(p=>p&&typeof p.id==='string').map(p=>{
   const session=String(p.session||'other');
   const sd=out.sessions[session];
-  return {id:p.id,reactionId:String(p.reactionId||''),session,start:sd?.start||String(p.start||'09:00'),end:sd?.end||String(p.end||'09:20'),grade:String(p.grade||''),title:String(p.title||'発表'),zoneId:String(p.zoneId||'')};
+  return {id:p.id,reactionId:String(p.reactionId||''),session,start:sd?.start||String(p.start||'09:00'),end:sd?.end||String(p.end||'09:20'),grade:String(p.grade||''),group:String(p.group||''),title:String(p.title||'発表'),zoneId:String(p.zoneId||'')};
  });
- // Ver.1.10: 同じ学年・発表内容を複数セッションで繰り返す場合は、
- // 会場や時間が違っても同じreactionIdを共有し、リアクションを「発表そのもの」に合算する。
- const reactionGroups=new Map();
- const reactionKey=p=>`${p.grade.trim()}|${p.title.trim()}`.toLocaleLowerCase('ja');
- for(const p of out.programs){
-  if(!(SESSION_IDS.includes(p.session)||p.session==='afternoon'))continue;
-  if(p.reactionId)reactionGroups.set(reactionKey(p),p.reactionId);
- }
- for(const p of out.programs){
-  if(!(SESSION_IDS.includes(p.session)||p.session==='afternoon')){if(!p.reactionId)p.reactionId=p.id;continue;}
-  const key=reactionKey(p);const existing=reactionGroups.get(key);
-  if(existing)p.reactionId=existing;
-  else {p.reactionId=p.reactionId||p.id;reactionGroups.set(key,p.reactionId);}
- }
+ // Ver.1.14: リアクションは「学年 + 発表グループ + 発表内容」を1つの発表単位として扱う。
+ // 同じグループが複数セッションで同じ発表を行う場合だけreactionIdを共有する。
+ syncReactionGroups(out);
  out.noticeTitle=String(v.noticeTitle||DEFAULT_DATA.noticeTitle);
  out.noticeMessage=String(v.noticeMessage||DEFAULT_DATA.noticeMessage);
  out.noticeIssuer=String(v.noticeIssuer||DEFAULT_DATA.noticeIssuer);
@@ -90,7 +99,7 @@ let editorActive=false;
 let demoDraftPreview=false;
 let state=draftState;
 let cloudAvailable=false;
-const schemaVersion=5;
+const schemaVersion=6;
 function projectPublished(src){
  const safe=validData(src);
  // テスト日時はブラウザ専用。公開データには送らず、全来場者で実時刻を使う。
@@ -134,7 +143,7 @@ function syncSessionProgramTimes(target=state){
  if(!target.sessions)target.sessions=clone(DEFAULT_SESSIONS);
  for(const p of target.programs||[]){const sd=target.sessions[p.session];if(sd){p.start=sd.start;p.end=sd.end;}}
 }
-function persist(){try{syncSessionProgramTimes(state);draftState=state;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true}catch(e){alert('ブラウザに保存できませんでした。容量・設定をご確認ください。');return false}}
+function persist(){try{syncSessionProgramTimes(state);syncReactionGroups(state);draftState=state;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true}catch(e){alert('ブラウザに保存できませんでした。容量・設定をご確認ください。');return false}}
 function toast(msg){byId('saveToast').textContent=msg;}
 function getZone(id){return state.zones.find(z=>z.id===id)}
 function getMap(id){return MAPS.find(m=>m.id===id)||MAPS[0]}
@@ -170,12 +179,21 @@ $$('.nav').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 function renderProgram(){
  const v=viewTime(),active=activePrograms();let text=`現在の判定時刻：<strong>${esc(v.date)} ${esc(v.time)}</strong>`;
  if(v.date!==state.eventDate)text+='　<span class="muted">開催日以外のため、開催中のプログラムはありません。</span>';
- else text+=active.length?`<br>ただいま開催中：${active.map(p=>esc(`${p.grade?`${p.grade} `:''}${p.title}`)).join('・')}`:'<br>現在開催中のプログラムはありません。';
+ else text+=active.length?`<br>ただいま開催中：${active.map(p=>esc(`${p.grade?`${p.grade} `:''}${p.group?`${p.group} `:''}${p.title}`)).join('・')}`:'<br>現在開催中のプログラムはありません。';
  byId('timeStatus').innerHTML=text;
- byId('programList').innerHTML=orderedPrograms().map(p=>{const pt=programTimes(p),st=programStatus(p);return `<div class="program-row ${st.key==='live'?'on':''}">
- <div class="time">${esc(pt.start)}</div><div><strong>${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${esc(p.title)}</strong><span class="program-status status-${st.key}">${st.label}</span>
- <div class="where">${esc(sessionLabel(p.session))}　${esc(pt.start)}〜${esc(pt.end)}　${esc(roomLabel(p))} <button type="button" class="minilink" data-see="${esc(p.zoneId)}" ${p.zoneId?'':'disabled'}>会場を見る</button></div>
- ${p.session==='afternoon'?reactionsHtml(p):''}</div></div>`}).join('');
+ const units=[];
+ for(const p of orderedPrograms().filter(p=>!SESSION_IDS.includes(p.session))){const pt=programTimes(p);units.push({type:'single',start:pt.start,p});}
+ for(const sid of SESSION_IDS){const ps=orderedPrograms().filter(p=>p.session===sid);if(ps.length){const d=sessionDef(sid);units.push({type:'session',start:d.start,sid,programs:ps});}}
+ units.sort((a,b)=>timeNum(a.start)-timeNum(b.start)||String(a.sid||a.p?.id||'').localeCompare(String(b.sid||b.p?.id||'')));
+ byId('programList').innerHTML=units.map(unit=>{
+  if(unit.type==='session'){
+   const d=sessionDef(unit.sid),st=programStatus(unit.programs[0]);
+   const items=unit.programs.slice().sort((a,b)=>String(roomLabel(a)).localeCompare(String(roomLabel(b)))).map(p=>`<div class="session-program-item"><div><strong>${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${p.group?`<span class="program-group">${esc(p.group)}</span> `:''}${esc(p.title)}</strong><div class="where">${esc(roomLabel(p))}</div></div><button type="button" class="minilink" data-see="${esc(p.zoneId)}" ${p.zoneId?'':'disabled'}>会場を見る</button></div>`).join('');
+   return `<div class="program-row session-group-row ${st.key==='live'?'on':''}"><div class="time">${esc(d.start)}</div><div><strong>${esc(d.label)}</strong><span class="program-status status-${st.key}">${st.label}</span><div class="where">${esc(d.start)}〜${esc(d.end)}　${unit.programs.length}会場</div><div class="session-program-items">${items}</div></div></div>`;
+  }
+  const p=unit.p,pt=programTimes(p),st=programStatus(p);
+  return `<div class="program-row ${st.key==='live'?'on':''}"><div class="time">${esc(pt.start)}</div><div><strong>${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${p.group?`<span class="program-group">${esc(p.group)}</span> `:''}${esc(p.title)}</strong><span class="program-status status-${st.key}">${st.label}</span><div class="where">${esc(sessionLabel(p.session))}　${esc(pt.start)}〜${esc(pt.end)}　${esc(roomLabel(p))} <button type="button" class="minilink" data-see="${esc(p.zoneId)}" ${p.zoneId?'':'disabled'}>会場を見る</button></div>${p.session==='afternoon'?reactionsHtml(p):''}</div></div>`;
+ }).join('');
  $$('[data-see]').forEach(b=>b.onclick=()=>{
   if(!b.dataset.see)return;
   const z=getZone(b.dataset.see);if(!z)return;
@@ -215,7 +233,7 @@ function floorDetailHtml(m){
  ps.sort((a,b)=>timeNum(programTimes(a).start)-timeNum(programTimes(b).start)||timeNum(programTimes(a).end)-timeNum(programTimes(b).end)||String(a.id).localeCompare(String(b.id)));
  return `<h4>${esc(z.name)} <span class="pill">${esc(z.id)}</span></h4>${z.note?`<p>${esc(z.note)}</p>`:''}
  <p class="muted">${esc(m.name)}　登録されている発表：${ps.length}件</p>
- ${ps.length?`<div class="venue-program-list">${ps.map(p=>{const pt=programTimes(p),st=programStatus(p);return `<article class="venue-program-item status-border-${st.key}"><div class="venue-program-meta"><span class="program-status status-${st.key}">${st.label}</span><strong>${esc(sessionLabel(p.session))}</strong><span>${esc(pt.start)}〜${esc(pt.end)}</span></div><div class="venue-program-title">${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${esc(p.title)}</div>${SESSION_IDS.includes(p.session)?reactionsHtml(p):''}</article>`}).join('')}</div>`:'<p>この会場のプログラムはまだ登録されていません。</p>'}`;
+ ${ps.length?`<div class="venue-program-list">${ps.map(p=>{const pt=programTimes(p),st=programStatus(p);return `<article class="venue-program-item status-border-${st.key}"><div class="venue-program-meta"><span class="program-status status-${st.key}">${st.label}</span><strong>${esc(sessionLabel(p.session))}</strong><span>${esc(pt.start)}〜${esc(pt.end)}</span></div><div class="venue-program-title">${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${p.group?`<span class="program-group">${esc(p.group)}</span> `:''}${esc(p.title)}</div>${SESSION_IDS.includes(p.session)?reactionsHtml(p):''}</article>`}).join('')}</div>`:'<p>この会場のプログラムはまだ登録されていません。</p>'}`;
 }
 function updateSelectedFloorDetails(){
  $$('#visitorMaps [data-zone]').forEach(b=>{
@@ -327,7 +345,7 @@ function readStampFromUrl(){const v=new URLSearchParams(location.search).get('st
  const current=stampList();if(!current.includes(n)){current.push(n);localStorage.setItem(STAMP_KEY,JSON.stringify(current));}
  renderStamps();setTab('stamp');}
 
-// Ver.1.12: 午前は会場詳細の各発表、午後はプログラム画面の各演目にリアクションを表示する。
+// Ver.1.13: 午前は会場詳細、午後はプログラム画面でリアクション。デモは公開前でもローカル操作確認可能。
 const REACTION_KINDS=[['good','👍','よかった'],['aha','💡','なるほど'],['amazing','✨','すごい'],['fun','😊','楽しかった'],['cheer','🙌','応援したい']];
 const reactionSelection={};
 let currentReactionUid='';
@@ -335,8 +353,13 @@ function reactionEligibility(p){
  const reactionId=p.reactionId||p.id;
  if(reactionPreviewMode)return {active:true,preview:true,reason:'表示テスト中：アイコンを押すと選択・解除を試せます（Firestoreには保存しません）'};
  const pub=publishedState;
+ const isPublished=!!pub?.programs?.some(x=>(x.reactionId||x.id)===reactionId);
+ // Ver.1.13: デモデータは公開前でも操作感を確認できる。公開後は通常のFirestore保存へ自動的に切り替える。
+ if(demoDraftPreview && String(p.id||'').startsWith('demo-') && !isPublished){
+  return {active:true,preview:true,reason:'デモ操作：この端末だけで選択・解除を試せます。Firestoreへ公開すると、実際のリアクションとして保存・集計できます。'};
+ }
  if(!pub||!pub.reactionDeadlineAt)return {active:false,reason:'リアクション準備中（管理者の公開待ち）'};
- if(!pub.programs?.some(x=>(x.reactionId||x.id)===reactionId))return {active:false,reason:'この発表をFirestoreへ公開すると受付できます'};
+ if(!isPublished)return {active:false,reason:'この発表をFirestoreへ公開すると受付できます'};
  const deadline=new Date(pub.reactionDeadline+':00+09:00');
  if(!Number.isFinite(deadline.getTime()))return {active:false,reason:'受付終了日時が未設定です'};
  return Date.now()<deadline.getTime()?{active:true,preview:false,reason:`受付終了：${esc(pub.reactionDeadline.replace('T',' '))}（日本時間）`}:{active:false,reason:'リアクションの受付は終了しました'};
@@ -473,7 +496,7 @@ byId('attachDemo').onclick=()=>{const r=readVenueForm();if(!r)return alert('先�
  if(!saveVenueRecord(r))return;
  const real=sessionProgramsForVenue(r.id)[0]||null;
  const sid=real?.session||'s1',d=sessionDef(sid);
- reactionPreviewProgram=real?null:{id:`preview-${r.id}`,reactionId:`preview-${r.id}`,session:sid,start:d.start,end:d.end,grade:'テスト',title:'リアクション表示テスト',zoneId:r.id,_previewOnly:true};
+ reactionPreviewProgram=real?null:{id:`preview-${r.id}`,reactionId:`preview-${r.id}`,session:sid,start:d.start,end:d.end,grade:'テスト',group:'デモ班',title:'リアクション表示テスト',zoneId:r.id,_previewOnly:true};
  reactionPreviewMode=true;
  state.test.enabled=true;state.test.date=state.eventDate;state.test.time=d.start;
  persist();editId=r.id;editDraft=clone(r);
@@ -497,16 +520,16 @@ function renderAdminPrograms(){
  byId('adminPrograms').innerHTML=`
  <div class="editor-card program-step-card"><div class="step-title"><span>1</span><div><h3>セッション①〜④の時間帯</h3><p class="muted">ここで設定した時間が、同じセッションを選んだすべての会場に共通で適用されます。</p></div></div>
  <div class="session-time-grid">${SESSION_IDS.map(id=>{const d=sessionDef(id);return `<div class="session-time-row" data-session-setting="${id}"><strong>${esc(d.label)}</strong><label>開始<input type="time" data-session-time="start" value="${esc(d.start)}"></label><label>終了<input type="time" data-session-time="end" value="${esc(d.end)}"></label></div>`}).join('')}</div></div>
- <div class="editor-card program-step-card"><div class="step-title"><span>2</span><div><h3>会場ごとの発表登録</h3><p class="muted">会場を選び、セッション・発表学年・発表内容だけを登録します。開始・終了時刻は上の設定から自動で入ります。</p></div></div>
+ <div class="editor-card program-step-card"><div class="step-title"><span>2</span><div><h3>会場ごとの発表登録</h3><p class="muted">会場を選び、セッション・発表学年（複数可）・発表グループ・発表内容を登録します。開始・終了時刻は上の設定から自動で入ります。</p></div></div>
  <label class="venue-program-selector">会場<select id="programVenueSelect">${state.zones.length?state.zones.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(z=>`<option value="${esc(z.id)}" ${z.id===adminProgramVenue?'selected':''}>${esc(z.id)}｜${esc(z.name)}</option>`).join(''):'<option value="">先に会場を登録してください</option>'}</select></label>
  <div class="venue-program-editor">${selectedZone?`<div class="venue-program-admin-heading"><strong>${esc(selectedZone.name)}</strong><span>${esc(selectedZone.id)}</span></div>${venuePrograms.length?venuePrograms.map(p=>adminVenueProgramRow(p)).join(''):'<p class="muted">この会場には、まだ発表が登録されていません。</p>'}<button type="button" id="addVenueProgram" class="btn light">＋ この会場に発表を登録</button>`:'<p class="muted">「会場・配置図」で会場を登録すると、ここから発表を追加できます。</p>'}</div></div>
  ${unassigned.length?`<div class="editor-card"><h3>会場未設定の発表</h3><p class="muted">旧バージョンから引き継いだ発表などです。会場を選択すると上の会場別登録へ移ります。</p><div class="legacy-program-list">${unassigned.map(p=>adminUnassignedRow(p)).join('')}</div></div>`:''}
  <details class="editor-card other-programs"><summary>開会行事・午後など、セッション以外の全体プログラム</summary><p class="muted">午後の体育館行事は「午後（プログラムでリアクション）」を選ぶと、来場者のプログラム画面にリアクションアイコンを表示します。</p><div class="admin-program-list">${other.map(p=>adminOtherProgramRow(p)).join('')}</div><div class="row-actions"><button type="button" id="addAfternoonProgram" class="btn light">＋ 午後プログラムを追加</button><button type="button" id="addOtherProgram" class="btn light">＋ その他の全体プログラムを追加</button></div></details>`;
  bindAdminProgramEvents();
 }
-function adminVenueProgramRow(p){return `<div class="venue-program-admin-row" data-program="${esc(p.id)}"><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年<input data-vpfield="grade" maxlength="30" placeholder="例：7年生" value="${esc(p.grade||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" placeholder="発表内容を入力" value="${esc(p.title)}"></label><div class="derived-time">${esc(programTimes(p).start)}〜${esc(programTimes(p).end)}</div><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
-function adminUnassignedRow(p){return `<div class="venue-program-admin-row legacy" data-program="${esc(p.id)}"><label>会場<select data-vpfield="zoneId">${roomOptions('')}</select></label><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年<input data-vpfield="grade" maxlength="30" value="${esc(p.grade||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" value="${esc(p.title)}"></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
-function adminOtherProgramRow(p){return `<div class="admin-program-row whole-program-row" data-program="${esc(p.id)}"><label>区分<select data-opfield="session"><option value="afternoon" ${p.session==='afternoon'?'selected':''}>午後（リアクション対象）</option><option value="other" ${p.session!=='afternoon'?'selected':''}>その他（リアクションなし）</option></select></label><label>開始<input type="time" data-opfield="start" value="${esc(p.start)}"></label><label>終了<input type="time" data-opfield="end" value="${esc(p.end)}"></label><label>内容<input data-opfield="title" maxlength="120" value="${esc(p.title)}"></label><label>会場<select data-opfield="zoneId">${roomOptions(p.zoneId)}</select></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
+function adminVenueProgramRow(p){return `<div class="venue-program-admin-row" data-program="${esc(p.id)}"><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年（複数可）<input data-vpfield="grade" maxlength="40" placeholder="例：7年生・8年生" value="${esc(p.grade||'')}"></label><label>発表グループ<input data-vpfield="group" maxlength="40" placeholder="例：A班・1班" value="${esc(p.group||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" placeholder="発表内容を入力" value="${esc(p.title)}"></label><div class="derived-time">${esc(programTimes(p).start)}〜${esc(programTimes(p).end)}</div><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
+function adminUnassignedRow(p){return `<div class="venue-program-admin-row legacy" data-program="${esc(p.id)}"><label>会場<select data-vpfield="zoneId">${roomOptions('')}</select></label><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年<input data-vpfield="grade" maxlength="40" value="${esc(p.grade||'')}"></label><label>発表グループ<input data-vpfield="group" maxlength="40" value="${esc(p.group||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" value="${esc(p.title)}"></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
+function adminOtherProgramRow(p){return `<div class="admin-program-row whole-program-row" data-program="${esc(p.id)}"><label>区分<select data-opfield="session"><option value="afternoon" ${p.session==='afternoon'?'selected':''}>午後（リアクション対象）</option><option value="other" ${p.session!=='afternoon'?'selected':''}>その他（リアクションなし）</option></select></label><label>開始<input type="time" data-opfield="start" value="${esc(p.start)}"></label><label>終了<input type="time" data-opfield="end" value="${esc(p.end)}"></label><label>発表学年<input data-opfield="grade" maxlength="40" placeholder="例：7年生・8年生" value="${esc(p.grade||'')}"></label><label>グループ<input data-opfield="group" maxlength="40" placeholder="例：合同A班" value="${esc(p.group||'')}"></label><label>内容<input data-opfield="title" maxlength="120" value="${esc(p.title)}"></label><label>会場<select data-opfield="zoneId">${roomOptions(p.zoneId)}</select></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
 function demoProgramRows(){
  const eligible=state.zones.filter(z=>!['building','parking'].includes(z.kind));
  const preferred=[...eligible.filter(z=>z.kind==='classroom'),...eligible.filter(z=>z.kind!=='classroom')];
@@ -533,8 +556,8 @@ function demoProgramRows(){
    const [grade,title]=gradeDemos[gradeIndex];
    rows.push({
     id:`demo-${sid}-${roomIndex+1}`,
-    reactionId:`demo-reaction-grade-${gradeIndex+1}`,
-    session:sid,start:d.start,end:d.end,grade,title,zoneId:room.id
+    reactionId:'',
+    session:sid,start:d.start,end:d.end,grade,group:`${String.fromCharCode(65+roomIndex)}班`,title,zoneId:room.id
    });
    demoIndex++;
   });
@@ -555,7 +578,7 @@ function addDemoPrograms(){
  // 登録直後に場所の反映を確認しやすいよう、同じ端末では下書きを公開画面へ即時プレビューする。
  demoDraftPreview=true;session='s1';visitorSelected='';state=draftState;
  persist();renderAdminPrograms();renderPublic();
- const msg=byId('demoDataMessage');if(msg)msg.textContent=`デモ発表を${demo.length}件登録しました。最大4会場×4セッションで、1〜9年生の発表を配置しています。この端末では会場案内にも即時反映します。別ブラウザで試す場合は「データ保存」→「Firestoreへ公開」を押してください。`;
+ const msg=byId('demoDataMessage');if(msg)msg.textContent=`デモ発表を${demo.length}件登録しました。最大4会場×4セッションで、1〜9年生の発表を配置しています。この端末では会場案内に即時反映され、発表カードのリアクションもその場で試せます。Firestoreへ公開すると、実際の匿名リアクションとして保存・集計できます。`;
  toast('デモデータを登録しました');
 }
 function removeDemoPrograms(){
@@ -574,9 +597,9 @@ function bindAdminProgramEvents(){
  $$('[data-vpfield]').forEach(el=>el.addEventListener('change',e=>{const row=e.target.closest('[data-program]'),p=state.programs.find(x=>x.id===row.dataset.program);if(!p)return;const field=e.target.dataset.vpfield,old=p[field];p[field]=e.target.value;if(field==='session'){const d=sessionDef(p.session);p.start=d.start;p.end=d.end;}if(hasDuplicateVenueSession(p)){alert('同じ会場の同じセッションには、すでに別の発表が登録されています。');p[field]=old;renderAdminPrograms();return;}if(field==='zoneId'&&p.zoneId)adminProgramVenue=p.zoneId;persist();renderAdminPrograms();renderPublic();toast('発表内容を保存しました')}));
  $$('[data-opfield]').forEach(el=>el.addEventListener('change',e=>{const row=e.target.closest('[data-program]'),p=state.programs.find(x=>x.id===row.dataset.program);if(!p)return;p[e.target.dataset.opfield]=e.target.value;persist();renderPublic();toast('全体プログラムを保存しました')}));
  $$('[data-del-program]').forEach(el=>el.onclick=()=>{if(!confirm('この発表を削除しますか？'))return;state.programs=state.programs.filter(p=>p.id!==el.dataset.delProgram);persist();renderAdminPrograms();renderPublic()});
- byId('addVenueProgram')?.addEventListener('click',()=>{if(!adminProgramVenue)return;const used=new Set(sessionProgramsForVenue(adminProgramVenue).map(p=>p.session));const sid=SESSION_IDS.find(id=>!used.has(id));if(!sid){alert('この会場にはセッション①〜④がすべて登録されています。');return;}const d=sessionDef(sid);state.programs.push({id:'p'+Date.now(),session:sid,start:d.start,end:d.end,grade:'',title:'',zoneId:adminProgramVenue});persist();renderAdminPrograms();renderPublic();toast(`${sessionLabel(sid)}の入力欄を追加しました`)});
- byId('addAfternoonProgram')?.addEventListener('click',()=>{state.programs.push({id:'p'+Date.now(),session:'afternoon',start:'13:00',end:'13:20',grade:'',title:'新しい午後プログラム',zoneId:''});persist();renderAdminPrograms();renderPublic();toast('午後プログラムを追加しました')});
- byId('addOtherProgram')?.addEventListener('click',()=>{state.programs.push({id:'p'+Date.now(),session:'other',start:'08:30',end:'08:50',grade:'',title:'新しい全体プログラム',zoneId:''});persist();renderAdminPrograms();renderPublic();toast('全体プログラムを追加しました')});
+ byId('addVenueProgram')?.addEventListener('click',()=>{if(!adminProgramVenue)return;const used=new Set(sessionProgramsForVenue(adminProgramVenue).map(p=>p.session));const sid=SESSION_IDS.find(id=>!used.has(id));if(!sid){alert('この会場にはセッション①〜④がすべて登録されています。');return;}const d=sessionDef(sid);state.programs.push({id:'p'+Date.now(),reactionId:'',session:sid,start:d.start,end:d.end,grade:'',group:'',title:'',zoneId:adminProgramVenue});persist();renderAdminPrograms();renderPublic();toast(`${sessionLabel(sid)}の入力欄を追加しました`)});
+ byId('addAfternoonProgram')?.addEventListener('click',()=>{state.programs.push({id:'p'+Date.now(),reactionId:'',session:'afternoon',start:'13:00',end:'13:20',grade:'',group:'',title:'新しい午後プログラム',zoneId:''});persist();renderAdminPrograms();renderPublic();toast('午後プログラムを追加しました')});
+ byId('addOtherProgram')?.addEventListener('click',()=>{state.programs.push({id:'p'+Date.now(),reactionId:'',session:'other',start:'08:30',end:'08:50',grade:'',group:'',title:'新しい全体プログラム',zoneId:''});persist();renderAdminPrograms();renderPublic();toast('全体プログラムを追加しました')});
  byId('addDemoData')?.addEventListener('click',addDemoPrograms);
  byId('removeDemoData')?.addEventListener('click',removeDemoPrograms);
 }
@@ -628,7 +651,7 @@ byId('printNotice').onclick=()=>{
  w.document.open();w.document.write(html);w.document.close();
 };
 
-byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:12,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
+byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:14,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
 byId('importJson').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const next=validData(parsed.data||parsed);if(!confirm('現在の設定を読み込んだデータで置き換えますか？'))return;state=next;draftState=state;persist();adminMap='campus';editId='';editDraft=null;adminProgramVenue='';renderAdmin();renderPublic();toast('読み込みました')}catch(error){console.error(error);alert('JSON形式を確認してください。')}finally{e.target.value=''}};
 byId('resetAll').onclick=()=>{if(!confirm('登録した会場・プログラムなどの試作データをすべて初期化しますか？'))return;state=clone(DEFAULT_DATA);draftState=state;persist();adminMap='campus';editId='';editDraft=null;adminProgramVenue='';renderAdmin();renderPublic();toast('初期化しました')};
 renderPublic();readStampFromUrl();

@@ -54,8 +54,22 @@ function validData(v){
  out.programs=v.programs.filter(p=>p&&typeof p.id==='string').map(p=>{
   const session=String(p.session||'other');
   const sd=out.sessions[session];
-  return {id:p.id,session,start:sd?.start||String(p.start||'09:00'),end:sd?.end||String(p.end||'09:20'),grade:String(p.grade||''),title:String(p.title||'発表'),zoneId:String(p.zoneId||'')};
+  return {id:p.id,reactionId:String(p.reactionId||''),session,start:sd?.start||String(p.start||'09:00'),end:sd?.end||String(p.end||'09:20'),grade:String(p.grade||''),title:String(p.title||'発表'),zoneId:String(p.zoneId||'')};
  });
+ // Ver.1.9: 同じ学年・発表内容を複数セッションで繰り返す場合は、
+ // 会場や時間が違っても同じreactionIdを共有し、リアクションを「発表そのもの」に合算する。
+ const reactionGroups=new Map();
+ const reactionKey=p=>`${p.grade.trim()}|${p.title.trim()}`.toLocaleLowerCase('ja');
+ for(const p of out.programs){
+  if(!(SESSION_IDS.includes(p.session)||p.session==='afternoon'))continue;
+  if(p.reactionId)reactionGroups.set(reactionKey(p),p.reactionId);
+ }
+ for(const p of out.programs){
+  if(!(SESSION_IDS.includes(p.session)||p.session==='afternoon')){if(!p.reactionId)p.reactionId=p.id;continue;}
+  const key=reactionKey(p);const existing=reactionGroups.get(key);
+  if(existing)p.reactionId=existing;
+  else {p.reactionId=p.reactionId||p.id;reactionGroups.set(key,p.reactionId);}
+ }
  out.noticeTitle=String(v.noticeTitle||DEFAULT_DATA.noticeTitle);
  out.noticeMessage=String(v.noticeMessage||DEFAULT_DATA.noticeMessage);
  out.noticeIssuer=String(v.noticeIssuer||DEFAULT_DATA.noticeIssuer);
@@ -74,7 +88,7 @@ let publishedState=null;
 let editorActive=false;
 let state=draftState;
 let cloudAvailable=false;
-const schemaVersion=4;
+const schemaVersion=5;
 function projectPublished(src){
  const safe=validData(src);
  // テスト日時はブラウザ専用。公開データには送らず、全来場者で実時刻を使う。
@@ -158,7 +172,7 @@ function renderProgram(){
  byId('programList').innerHTML=orderedPrograms().map(p=>{const pt=programTimes(p),st=programStatus(p);return `<div class="program-row ${st.key==='live'?'on':''}">
  <div class="time">${esc(pt.start)}</div><div><strong>${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${esc(p.title)}</strong><span class="program-status status-${st.key}">${st.label}</span>
  <div class="where">${esc(sessionLabel(p.session))}　${esc(pt.start)}〜${esc(pt.end)}　${esc(roomLabel(p))} <button type="button" class="minilink" data-see="${esc(p.zoneId)}" ${p.zoneId?'':'disabled'}>会場を見る</button></div>
- ${reactionsHtml(p)}</div></div>`}).join('');
+ ${p.session==='afternoon'?reactionsHtml(p):''}</div></div>`}).join('');
  $$('[data-see]').forEach(b=>b.onclick=()=>{
   if(!b.dataset.see)return;
   const z=getZone(b.dataset.see);if(!z)return;
@@ -195,7 +209,7 @@ function floorDetailHtml(m){
  const ps=state.programs.filter(p=>p.zoneId===z.id).slice().sort((a,b)=>timeNum(programTimes(a).start)-timeNum(programTimes(b).start)||timeNum(programTimes(a).end)-timeNum(programTimes(b).end)||String(a.id).localeCompare(String(b.id)));
  return `<h4>${esc(z.name)} <span class="pill">${esc(z.id)}</span></h4>${z.note?`<p>${esc(z.note)}</p>`:''}
  <p class="muted">${esc(m.name)}　登録されている発表：${ps.length}件</p>
- ${ps.length?`<div class="venue-program-list">${ps.map(p=>{const pt=programTimes(p),st=programStatus(p);return `<article class="venue-program-item status-border-${st.key}"><div class="venue-program-meta"><span class="program-status status-${st.key}">${st.label}</span><strong>${esc(sessionLabel(p.session))}</strong><span>${esc(pt.start)}〜${esc(pt.end)}</span></div><div class="venue-program-title">${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${esc(p.title)}</div>${reactionsHtml(p)}</article>`}).join('')}</div>`:'<p>この会場のプログラムはまだ登録されていません。</p>'}`;
+ ${ps.length?`<div class="venue-program-list">${ps.map(p=>{const pt=programTimes(p),st=programStatus(p);return `<article class="venue-program-item status-border-${st.key}"><div class="venue-program-meta"><span class="program-status status-${st.key}">${st.label}</span><strong>${esc(sessionLabel(p.session))}</strong><span>${esc(pt.start)}〜${esc(pt.end)}</span></div><div class="venue-program-title">${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${esc(p.title)}</div>${SESSION_IDS.includes(p.session)?reactionsHtml(p):''}</article>`}).join('')}</div>`:'<p>この会場のプログラムはまだ登録されていません。</p>'}`;
 }
 function updateSelectedFloorDetails(){
  $$('#visitorMaps [data-zone]').forEach(b=>{
@@ -307,7 +321,7 @@ function readStampFromUrl(){const v=new URLSearchParams(location.search).get('st
  const current=stampList();if(!current.includes(n)){current.push(n);localStorage.setItem(STAMP_KEY,JSON.stringify(current));}
  renderStamps();setTab('stamp');}
 
-// Ver.1.4: 感想は会場でなく発表IDに紐づけ、公開データとは別パスへ保存する。
+// Ver.1.9: 午前は会場詳細の各発表、午後はプログラム画面の各演目にリアクションを表示する。
 const REACTION_KINDS=[['good','👍','よかった'],['aha','💡','なるほど'],['amazing','✨','すごい'],['fun','😊','楽しかった'],['cheer','🙌','応援したい']];
 const reactionSelection={};
 let currentReactionUid='';
@@ -321,10 +335,11 @@ function reactionEligibility(p){
 }
 function reactionsHtml(p){
  const info=reactionEligibility(p);
- const selected=reactionSelection[p.id]||[];
- return `<div class="reactions-box" data-reaction-box="${esc(p.id)}"><div class="reactions-title">この発表にリアクション</div>
-  <div class="reaction-choices">${REACTION_KINDS.map(([key,emoji,name])=>`<button type="button" data-reaction-program="${esc(p.id)}" data-reaction-kind="${key}" class="reaction-choice ${selected.includes(key)?'is-selected':''}" aria-pressed="${selected.includes(key)}" ${info.active?'':'disabled'}><span aria-hidden="true">${emoji}</span>${name}</button>`).join('')}</div>
-  <p class="reaction-hint" data-reaction-message="${esc(p.id)}" role="status">${info.reason}</p></div>`;
+ const reactionId=p.reactionId||p.id;
+ const selected=reactionSelection[reactionId]||[];
+ return `<div class="reactions-box" data-reaction-box="${esc(reactionId)}"><div class="reactions-title">この発表にリアクション</div>
+  <div class="reaction-choices">${REACTION_KINDS.map(([key,emoji,name])=>`<button type="button" title="${esc(name)}" aria-label="${esc(name)}" data-reaction-program="${esc(reactionId)}" data-reaction-kind="${key}" class="reaction-choice ${selected.includes(key)?'is-selected':''}" aria-pressed="${selected.includes(key)}" ${info.active?'':'disabled'}><span aria-hidden="true">${emoji}</span></button>`).join('')}</div>
+  <p class="reaction-hint" data-reaction-message="${esc(reactionId)}" role="status">${info.reason}</p></div>`;
 }
 function refreshReactionButtons(programId){
  const selected=reactionSelection[programId]||[];
@@ -462,12 +477,12 @@ function renderAdminPrograms(){
  <label class="venue-program-selector">会場<select id="programVenueSelect">${state.zones.length?state.zones.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(z=>`<option value="${esc(z.id)}" ${z.id===adminProgramVenue?'selected':''}>${esc(z.id)}｜${esc(z.name)}</option>`).join(''):'<option value="">先に会場を登録してください</option>'}</select></label>
  <div class="venue-program-editor">${selectedZone?`<div class="venue-program-admin-heading"><strong>${esc(selectedZone.name)}</strong><span>${esc(selectedZone.id)}</span></div>${venuePrograms.length?venuePrograms.map(p=>adminVenueProgramRow(p)).join(''):'<p class="muted">この会場には、まだ発表が登録されていません。</p>'}<button type="button" id="addVenueProgram" class="btn light">＋ この会場に発表を登録</button>`:'<p class="muted">「会場・配置図」で会場を登録すると、ここから発表を追加できます。</p>'}</div></div>
  ${unassigned.length?`<div class="editor-card"><h3>会場未設定の発表</h3><p class="muted">旧バージョンから引き継いだ発表などです。会場を選択すると上の会場別登録へ移ります。</p><div class="legacy-program-list">${unassigned.map(p=>adminUnassignedRow(p)).join('')}</div></div>`:''}
- <details class="editor-card other-programs"><summary>開会行事・午後など、セッション以外の全体プログラム</summary><p class="muted">必要な場合だけ編集してください。</p><div class="admin-program-list">${other.map(p=>adminOtherProgramRow(p)).join('')}</div><button type="button" id="addOtherProgram" class="btn light">＋ 全体プログラムを追加</button></details>`;
+ <details class="editor-card other-programs"><summary>開会行事・午後など、セッション以外の全体プログラム</summary><p class="muted">午後の体育館行事は「午後（プログラムでリアクション）」を選ぶと、来場者のプログラム画面にリアクションアイコンを表示します。</p><div class="admin-program-list">${other.map(p=>adminOtherProgramRow(p)).join('')}</div><div class="row-actions"><button type="button" id="addAfternoonProgram" class="btn light">＋ 午後プログラムを追加</button><button type="button" id="addOtherProgram" class="btn light">＋ その他の全体プログラムを追加</button></div></details>`;
  bindAdminProgramEvents();
 }
 function adminVenueProgramRow(p){return `<div class="venue-program-admin-row" data-program="${esc(p.id)}"><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年<input data-vpfield="grade" maxlength="30" placeholder="例：7年生" value="${esc(p.grade||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" placeholder="発表内容を入力" value="${esc(p.title)}"></label><div class="derived-time">${esc(programTimes(p).start)}〜${esc(programTimes(p).end)}</div><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
 function adminUnassignedRow(p){return `<div class="venue-program-admin-row legacy" data-program="${esc(p.id)}"><label>会場<select data-vpfield="zoneId">${roomOptions('')}</select></label><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年<input data-vpfield="grade" maxlength="30" value="${esc(p.grade||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" value="${esc(p.title)}"></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
-function adminOtherProgramRow(p){return `<div class="admin-program-row" data-program="${esc(p.id)}"><label>開始<input type="time" data-opfield="start" value="${esc(p.start)}"></label><label>終了<input type="time" data-opfield="end" value="${esc(p.end)}"></label><label>内容<input data-opfield="title" maxlength="120" value="${esc(p.title)}"></label><label>会場<select data-opfield="zoneId">${roomOptions(p.zoneId)}</select></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
+function adminOtherProgramRow(p){return `<div class="admin-program-row whole-program-row" data-program="${esc(p.id)}"><label>区分<select data-opfield="session"><option value="afternoon" ${p.session==='afternoon'?'selected':''}>午後（リアクション対象）</option><option value="other" ${p.session!=='afternoon'?'selected':''}>その他（リアクションなし）</option></select></label><label>開始<input type="time" data-opfield="start" value="${esc(p.start)}"></label><label>終了<input type="time" data-opfield="end" value="${esc(p.end)}"></label><label>内容<input data-opfield="title" maxlength="120" value="${esc(p.title)}"></label><label>会場<select data-opfield="zoneId">${roomOptions(p.zoneId)}</select></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
 function bindAdminProgramEvents(){
  $$('[data-session-setting]').forEach(row=>row.querySelectorAll('[data-session-time]').forEach(input=>input.addEventListener('change',()=>{const id=row.dataset.sessionSetting,start=row.querySelector('[data-session-time="start"]').value,end=row.querySelector('[data-session-time="end"]').value;if(!start||!end||timeNum(start)>=timeNum(end)){alert('開始時刻より後に終了時刻を設定してください。');renderAdminPrograms();return;}state.sessions[id]={...state.sessions[id],label:DEFAULT_SESSIONS[id].label,start,end};syncSessionProgramTimes();persist();renderAdminPrograms();renderPublic();toast(`${sessionLabel(id)}の時間を保存しました`)})));
  byId('programVenueSelect')?.addEventListener('change',e=>{adminProgramVenue=e.target.value;renderAdminPrograms()});
@@ -475,7 +490,8 @@ function bindAdminProgramEvents(){
  $$('[data-opfield]').forEach(el=>el.addEventListener('change',e=>{const row=e.target.closest('[data-program]'),p=state.programs.find(x=>x.id===row.dataset.program);if(!p)return;p[e.target.dataset.opfield]=e.target.value;persist();renderPublic();toast('全体プログラムを保存しました')}));
  $$('[data-del-program]').forEach(el=>el.onclick=()=>{if(!confirm('この発表を削除しますか？'))return;state.programs=state.programs.filter(p=>p.id!==el.dataset.delProgram);persist();renderAdminPrograms();renderPublic()});
  byId('addVenueProgram')?.addEventListener('click',()=>{if(!adminProgramVenue)return;const used=new Set(sessionProgramsForVenue(adminProgramVenue).map(p=>p.session));const sid=SESSION_IDS.find(id=>!used.has(id));if(!sid){alert('この会場にはセッション①〜④がすべて登録されています。');return;}const d=sessionDef(sid);state.programs.push({id:'p'+Date.now(),session:sid,start:d.start,end:d.end,grade:'',title:'',zoneId:adminProgramVenue});persist();renderAdminPrograms();renderPublic();toast(`${sessionLabel(sid)}の入力欄を追加しました`)});
- byId('addOtherProgram')?.addEventListener('click',()=>{state.programs.push({id:'p'+Date.now(),session:'other',start:'12:00',end:'12:20',grade:'',title:'新しい全体プログラム',zoneId:''});persist();renderAdminPrograms();renderPublic()});
+ byId('addAfternoonProgram')?.addEventListener('click',()=>{state.programs.push({id:'p'+Date.now(),session:'afternoon',start:'13:00',end:'13:20',grade:'',title:'新しい午後プログラム',zoneId:''});persist();renderAdminPrograms();renderPublic();toast('午後プログラムを追加しました')});
+ byId('addOtherProgram')?.addEventListener('click',()=>{state.programs.push({id:'p'+Date.now(),session:'other',start:'08:30',end:'08:50',grade:'',title:'新しい全体プログラム',zoneId:''});persist();renderAdminPrograms();renderPublic();toast('全体プログラムを追加しました')});
 }
 function renderBasic(){byId('settingYear').value=state.year;byId('settingDate').value=state.eventDate;byId('settingSlogan').value=state.slogan;byId('reactionDeadline').value=state.reactionDeadline||state.eventDate+'T17:00';
  byId('testEnabled').checked=!!state.test.enabled;byId('testDate').value=state.test.date;byId('testTime').value=state.test.time;byId('testSlider').value=timeNum(state.test.time);byId('testTimeText').textContent=state.test.time;}
@@ -525,7 +541,7 @@ byId('printNotice').onclick=()=>{
  w.document.open();w.document.write(html);w.document.close();
 };
 
-byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:11,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
+byId('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:12,data:state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`OFES_${state.year}_backup.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2500);};
 byId('importJson').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const next=validData(parsed.data||parsed);if(!confirm('現在の設定を読み込んだデータで置き換えますか？'))return;state=next;draftState=state;persist();adminMap='campus';editId='';editDraft=null;adminProgramVenue='';renderAdmin();renderPublic();toast('読み込みました')}catch(error){console.error(error);alert('JSON形式を確認してください。')}finally{e.target.value=''}};
 byId('resetAll').onclick=()=>{if(!confirm('登録した会場・プログラムなどの試作データをすべて初期化しますか？'))return;state=clone(DEFAULT_DATA);draftState=state;persist();adminMap='campus';editId='';editDraft=null;adminProgramVenue='';renderAdmin();renderPublic();toast('初期化しました')};
 renderPublic();readStampFromUrl();

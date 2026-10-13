@@ -1,5 +1,5 @@
 /**
- * OFES Ver.1.8: Google Authentication + Firestore published content.
+ * OFES Ver.1.9: Google Authentication + Firestore published content.
  * 管理者はローカル下書きを明示的に公開する。来場者は認証なしで公開データを購読する。
  * セキュリティ境界は Firebase Security Rules（クライアントのパスワードではない）。
  */
@@ -26,7 +26,7 @@ const publishMessage = el('firebasePublishMessage');
 let isLoggedIn=false, isBusy=false, publishedData=null, lastPublishTime=null, cloudLoaded=false, cloudError=false;
 const REACTION_KEYS=['good','aha','amazing','fun','cheer'];
 const REACTION_LABELS=['👍 よかった','💡 なるほど','✨ すごい','😊 楽しかった','🙌 応援したい'];
-let latestStats=null;
+let latestStats=null, latestAllStats=[];
 
 function status(node, text, kind='info') {
  if(!node)return;
@@ -113,7 +113,7 @@ try{
    try{
     const status=publishStatus();if(!status.ok)throw Error(status.message);
     const eventDate=publishedData.eventDate;
-    if(!publishedData.programs?.some(p=>p.id===programId))throw Error('公開されていない発表です。');
+    if(!publishedData.programs?.some(p=>(p.reactionId||p.id)===programId))throw Error('公開されていない発表です。');
     let user=auth.currentUser;
     if(!user)user=(await signInAnonymously(auth)).user;
     const ref=voteDoc(eventDate,programId,user.uid);
@@ -138,43 +138,82 @@ try{
  function restoreCachedReactions(){
   const uid=auth.currentUser?.uid, date=publishedData?.eventDate;if(!uid||!date)return;
   const cache=readSelectionCache();
+  const seen=new Set();
   for(const p of publishedData.programs||[]){
-   const sel=cache[`${date}|${p.id}|${uid}`];
-   if(Array.isArray(sel))emitSelection(p.id,sel,uid);
+   const reactionId=p.reactionId||p.id;if(seen.has(reactionId))continue;seen.add(reactionId);
+   const sel=cache[`${date}|${reactionId}|${uid}`];
+   if(Array.isArray(sel))emitSelection(reactionId,sel,uid);
   }
+ }
+ function isReactionTargetProgram(p){
+  return !!p && (['s1','s2','s3','s4'].includes(p.session) || p.session==='afternoon');
+ }
+ function sessionText(p){
+  if(['s1','s2','s3','s4'].includes(p.session)){
+   const d=publishedData?.sessions?.[p.session];
+   return d?.label || ({s1:'セッション①',s2:'セッション②',s3:'セッション③',s4:'セッション④'}[p.session]||p.session);
+  }
+  return p.session==='afternoon'?'午後':'その他';
+ }
+ function zoneText(p){
+  return publishedData?.zones?.find(z=>z.id===p.zoneId)?.name || (p.zoneId||'会場未設定');
+ }
+ function reactionTargetGroups(){
+  const map=new Map();
+  for(const p of (publishedData?.programs||[]).filter(isReactionTargetProgram)){
+   const reactionId=p.reactionId||p.id;
+   if(!map.has(reactionId))map.set(reactionId,{reactionId,representative:p,occurrences:[]});
+   map.get(reactionId).occurrences.push(p);
+  }
+  return [...map.values()].sort((a,b)=>{
+   const pa=a.representative,pb=b.representative;
+   const ga=String(pa.grade||'全体・その他'),gb=String(pb.grade||'全体・その他');
+   return ga.localeCompare(gb,'ja',{numeric:true}) || String(pa.start||'').localeCompare(String(pb.start||'')) || String(pa.title||'').localeCompare(String(pb.title||''),'ja');
+  });
  }
  function renderReactionStatsOptions(){
   const selector=el('reactionStatsProgram');if(!selector)return;
   const chosen=selector.value;
-  const ps=publishedData?.programs||[];
+  const groups=reactionTargetGroups();
   selector.replaceChildren(new Option('発表を選んでください',''));
-  for(const p of ps)selector.add(new Option(`${p.start} ${p.grade?`${p.grade} `:''}${p.title}`,p.id));
-  if(ps.some(p=>p.id===chosen))selector.value=chosen;
+  for(const g of groups){
+   const p=g.representative, repeat=g.occurrences.length>1?`（${g.occurrences.length}回実施）`:'';
+   selector.add(new Option(`${p.grade?`${p.grade} `:''}${p.title}${repeat}`,g.reactionId));
+  }
+  if(groups.some(g=>g.reactionId===chosen))selector.value=chosen;
+ }
+ async function collectOneTarget(group){
+  const p=group.representative;
+  const votes=await getDocs(collection(db,'reactionEvents',publishedData.eventDate,'programs',group.reactionId,'votes'));
+  const counts=Object.fromEntries(REACTION_KEYS.map(k=>[k,0]));
+  for(const snap of votes.docs){const choices=snap.data().selected||[];for(const k of REACTION_KEYS){if(choices.includes(k))counts[k]++;}}
+  const occurrences=[...group.occurrences].sort((a,b)=>String(a.start||'').localeCompare(String(b.start||'')));
+  const schedules=occurrences.map(x=>`${sessionText(x)} ${x.start||''}〜${x.end||''}`);
+  return {reactionId:group.reactionId,grade:String(p.grade||'').trim()||'全体・その他',title:p.title||'発表',zoneName:zoneText(p),schedules,respondents:votes.size,counts};
  }
  const statsButton=el('reactionStatsLoad'),statsOut=el('reactionStatsResult'),statsMessage=el('reactionStatsMessage');
  statsButton.addEventListener('click',async()=>{
-  const programId=el('reactionStatsProgram').value;
-  const p=publishedData?.programs?.find(x=>x.id===programId);
-  if(!p){statsMessage.textContent='集計する発表を選択してください。';return;}
+  const reactionId=el('reactionStatsProgram').value;
+  const group=reactionTargetGroups().find(g=>g.reactionId===reactionId);
+  if(!group){statsMessage.textContent='集計する発表を選択してください。';return;}
   if(!auth.currentUser?.providerData?.some(x=>x.providerId==='google.com')){
    statsMessage.textContent='管理者Googleログインが必要です。';return;
   }
   statsButton.disabled=true;statsOut.hidden=true;el('reactionStatsExport').disabled=true;
   statsMessage.textContent='Firestoreから集計しています…';
   try{
-   const votes=await getDocs(collection(db,'reactionEvents',publishedData.eventDate,'programs',programId,'votes'));
-   const counts=Object.fromEntries(REACTION_KEYS.map(k=>[k,0]));
-   for(const snap of votes.docs){const choices=snap.data().selected||[];for(const k of REACTION_KEYS){if(choices.includes(k))counts[k]++;}}
+   const item=await collectOneTarget(group),p=group.representative;
    statsOut.replaceChildren();
    const heading=document.createElement('strong');heading.textContent=`${p.grade?`${p.grade} `:''}${p.title}`;statsOut.append(heading);
-   const total=document.createElement('p');total.textContent=`回答者数：${votes.size}（1人が複数種類を選択できます）`;statsOut.append(total);
+   const schedule=document.createElement('p');schedule.textContent=`実施：${item.schedules.join('／')}　会場：${item.zoneName}`;statsOut.append(schedule);
+   const total=document.createElement('p');total.textContent=`回答者数：${item.respondents}（同じ発表を複数セッションで実施した場合も合算します。1人が複数種類を選択できます）`;statsOut.append(total);
    REACTION_KEYS.forEach((key,i)=>{
     const row=document.createElement('div');row.className='reaction-stat-row';
     const label=document.createElement('span');label.textContent=REACTION_LABELS[i];
-    const n=document.createElement('strong');n.textContent=`${counts[key]} 件`;
+    const n=document.createElement('strong');n.textContent=`${item.counts[key]} 件`;
     row.append(label,n);statsOut.append(row);
    });
-   latestStats={programTitle:`${p.grade?`${p.grade} `:''}${p.title}`,year:publishedData.year,eventDate:publishedData.eventDate,counts,respondents:votes.size};
+   latestStats={programTitle:`${p.grade?`${p.grade} `:''}${p.title}`,year:publishedData.year,eventDate:publishedData.eventDate,counts:item.counts,respondents:item.respondents,schedules:item.schedules,zoneName:item.zoneName};
    statsOut.hidden=false;el('reactionStatsExport').disabled=false;
    statsMessage.textContent='集計しました。順位付けは行っていません。';
   }catch(error){statsMessage.textContent=`集計できませんでした：${errorText(error)}`;}
@@ -182,11 +221,65 @@ try{
  });
  el('reactionStatsExport').addEventListener('click',()=>{
   if(!latestStats)return;
-  const rows=[['発表',latestStats.programTitle],['年度',latestStats.year],['開催日',latestStats.eventDate],['回答者数',latestStats.respondents],...REACTION_KEYS.map((k,i)=>[REACTION_LABELS[i],latestStats.counts[k]])];
+  const rows=[['発表',latestStats.programTitle],['年度',latestStats.year],['開催日',latestStats.eventDate],['実施時間',latestStats.schedules.join(' / ')],['会場',latestStats.zoneName],['回答者数',latestStats.respondents],...REACTION_KEYS.map((k,i)=>[REACTION_LABELS[i],latestStats.counts[k]])];
   const csv='\ufeff'+rows.map(cols=>cols.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=url;a.download=`OFES_リアクション集計_${latestStats.eventDate}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
  });
+
+ const allButton=el('reactionStatsLoadAll'),allOut=el('reactionStatsAllResult'),allMessage=el('reactionStatsAllMessage'),pdfButton=el('reactionStatsPdf');
+ function renderAllStats(){
+  if(!allOut)return;
+  allOut.replaceChildren();
+  const groups=new Map();
+  for(const item of latestAllStats){if(!groups.has(item.grade))groups.set(item.grade,[]);groups.get(item.grade).push(item);}
+  for(const [grade,items] of groups){
+   const group=document.createElement('section');group.className='reaction-grade-group';
+   const h=document.createElement('h4');h.textContent=grade;group.append(h);
+   const wrap=document.createElement('div');wrap.className='reaction-all-table-wrap';
+   const table=document.createElement('table');table.className='reaction-all-table';
+   table.innerHTML='<thead><tr><th>発表</th><th>実施時間</th><th>会場</th><th>回答者</th><th>👍</th><th>💡</th><th>✨</th><th>😊</th><th>🙌</th></tr></thead>';
+   const tbody=document.createElement('tbody');
+   for(const item of items){
+    const tr=document.createElement('tr');
+    const values=[item.title,item.schedules.join('／'),item.zoneName,String(item.respondents),...REACTION_KEYS.map(k=>String(item.counts[k]))];
+    values.forEach((v,i)=>{const td=document.createElement('td');td.textContent=v;if(i>=3)td.classList.add('count');tr.append(td);});
+    tbody.append(tr);
+   }
+   table.append(tbody);wrap.append(table);group.append(wrap);allOut.append(group);
+  }
+ }
+ allButton?.addEventListener('click',async()=>{
+  if(!auth.currentUser?.providerData?.some(x=>x.providerId==='google.com')){allMessage.textContent='管理者Googleログインが必要です。';return;}
+  const groups=reactionTargetGroups();
+  if(!groups.length){allMessage.textContent='集計対象の発表がありません。';return;}
+  allButton.disabled=true;pdfButton.disabled=true;allOut.hidden=true;latestAllStats=[];
+  allMessage.textContent=`全${groups.length}発表をFirestoreから集計しています…`;
+  try{
+   const results=[];
+   for(let i=0;i<groups.length;i++){
+    const p=groups[i].representative;
+    allMessage.textContent=`集計中 ${i+1}/${groups.length}：${p.grade?`${p.grade} `:''}${p.title}`;
+    results.push(await collectOneTarget(groups[i]));
+   }
+   latestAllStats=results;renderAllStats();allOut.hidden=false;pdfButton.disabled=false;
+   const totalRespondents=results.reduce((sum,x)=>sum+x.respondents,0);
+   allMessage.textContent=`全${results.length}発表を集計しました。各発表の回答者数の合計は${totalRespondents}です（同じ来場者が複数発表に回答した場合は重複して数えます）。`;
+  }catch(error){allMessage.textContent=`一括集計できませんでした：${errorText(error)}`;}
+  finally{allButton.disabled=false;}
+ });
+ function htmlEsc(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+ pdfButton?.addEventListener('click',()=>{
+  if(!latestAllStats.length)return;
+  const groups=new Map();
+  for(const item of latestAllStats){if(!groups.has(item.grade))groups.set(item.grade,[]);groups.get(item.grade).push(item);}
+  const sections=[...groups.entries()].map(([grade,items],index)=>`<section class="grade ${index?'pagebreak':''}"><h2>${htmlEsc(grade)} リアクション集計</h2><table><thead><tr><th>発表内容</th><th>実施時間</th><th>会場</th><th>回答者</th><th>👍<small>よかった</small></th><th>💡<small>なるほど</small></th><th>✨<small>すごい</small></th><th>😊<small>楽しかった</small></th><th>🙌<small>応援したい</small></th></tr></thead><tbody>${items.map(item=>`<tr><td>${htmlEsc(item.title)}</td><td>${item.schedules.map(htmlEsc).join('<br>')}</td><td>${htmlEsc(item.zoneName)}</td><td class="num">${item.respondents}</td>${REACTION_KEYS.map(k=>`<td class="num">${item.counts[k]}</td>`).join('')}</tr>`).join('')}</tbody></table></section>`).join('');
+  const w=window.open('','OFES_REACTION_PDF','width=1100,height=850');
+  if(!w){allMessage.textContent='PDF出力画面を開けませんでした。ポップアップを許可してください。';return;}
+  const html=`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>OFES リアクション集計</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans JP","Yu Gothic",Meiryo,sans-serif;color:#172019;margin:0;font-size:9.5pt}h1{font-size:18pt;margin:0 0 2mm}h2{font-size:14pt;margin:0 0 4mm;border-left:5px solid #197a4b;padding-left:8px}.meta{margin:0 0 5mm;color:#526058}.legend{display:flex;gap:6mm;flex-wrap:wrap;padding:2.5mm 3mm;background:#f2f7f3;border:1px solid #ccd9ce;border-radius:5px;margin-bottom:5mm}.legend span{white-space:nowrap}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th,td{border:1px solid #cfd7d0;padding:2.2mm;vertical-align:top}th{background:#edf4ee;font-size:8.5pt}th small{display:block;font-weight:500}td.num{text-align:center;font-weight:700}.pagebreak{break-before:page;page-break-before:always}.note{margin-top:4mm;font-size:8.5pt;color:#59655d}.printbar{position:fixed;top:10px;right:10px}.printbar button{padding:9px 14px;font-size:14px}@media print{.printbar{display:none}}</style></head><body><div class="printbar"><button onclick="window.print()">印刷／PDFとして保存</button></div><h1>OFES リアクション集計表</h1><p class="meta">${htmlEsc(publishedData.year||'')}年度　開催日：${htmlEsc(publishedData.eventDate||'')}　※同じ発表を複数セッションで実施した場合は合算しています。1人が複数種類のリアクションを選択できます。</p><div class="legend"><span>👍 よかった</span><span>💡 なるほど</span><span>✨ すごい</span><span>😊 楽しかった</span><span>🙌 応援したい</span></div>${sections}<p class="note">※ 個人を特定する情報は掲載していません。回答者数は発表ごとの匿名回答数です。</p></body></html>`;
+  w.document.open();w.document.write(html);w.document.close();
+ });
+
  window.addEventListener('ofes-cloud-published',()=>{restoreCachedReactions();});
  onAuthStateChanged(auth,()=>{restoreCachedReactions();});
 
@@ -271,7 +364,7 @@ try{
    const deadlineDate=new Date(`${payload.reactionDeadline}:00+09:00`);
    if(!Number.isFinite(deadlineDate.getTime()))throw Error('リアクション受付終了日時の形式が正しくありません。');
    // ファイル内の旧スキーマは変えず、公開ドキュメントにだけ timestamp を追加する。
-   await setDoc(publicDoc,{...payload,programIds:[...new Set(payload.programs.map(p=>p.id))],reactionDeadlineAt:Timestamp.fromDate(deadlineDate),updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid});
+   await setDoc(publicDoc,{...payload,programIds:[...new Set(payload.programs.map(p=>p.reactionId||p.id))],reactionDeadlineAt:Timestamp.fromDate(deadlineDate),updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid});
    status(publishMessage,'Firestoreへの公開が完了しました。別の端末でも同じ内容を閲覧できます。','ok');
   }catch(error){status(publishMessage,`公開に失敗：${errorText(error)}`,'error');}
   finally{isBusy=false;setUiState();}

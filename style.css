@@ -71,3 +71,33 @@
 
 /* Ver.1.7: parent notice PDF */
 .notice-card-admin textarea{width:100%;resize:vertical;min-height:150px}.notice-url-box{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:#f7faf7}.notice-url-box code{display:block;margin-top:6px;padding:8px;background:#fff;border-radius:7px;word-break:break-all}.notice-help ul{line-height:1.9}
+
+/* Ver.1.9: reaction UX - explain once, tap icons only; batch admin aggregation */
+.reaction-guide{margin:14px 0 16px;padding:12px 13px;background:#f1f7f2;border:1px solid #c8dccb;border-radius:12px;display:grid;gap:8px}
+.reaction-guide.compact{margin:10px 0 13px}
+.reaction-guide>strong{font-size:13px;color:#24543a}
+.reaction-guide-items{display:flex;flex-wrap:wrap;gap:7px 12px;align-items:center}
+.reaction-guide-items span{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#43564a;white-space:nowrap}
+.reaction-guide-items b{font-size:18px;line-height:1}
+.reaction-guide small{color:var(--muted);font-size:11px;line-height:1.55}
+.reactions-box{padding-top:9px}
+.reactions-title{margin-bottom:6px}
+.reaction-choices{gap:7px}
+.reaction-choice{position:relative;width:44px;height:44px;min-width:44px;min-height:44px;padding:0;border-radius:50%;justify-content:center;display:inline-grid;place-items:center}
+.reaction-choice span{font-size:21px;line-height:1}
+.reaction-choice.is-selected::after{content:'✓';position:absolute;right:-2px;top:-4px;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#1f714a;color:white;font-size:11px;box-shadow:0 0 0 2px #fff}
+.reaction-choice:disabled{opacity:.45;cursor:not-allowed}
+.reaction-hint{margin-top:5px!important}
+.reaction-batch-card{max-width:1100px}
+.reaction-all-result{margin-top:12px;display:grid;gap:15px}
+.reaction-grade-group{border:1px solid var(--line);border-radius:12px;background:#f8faf8;overflow:hidden}
+.reaction-grade-group h4{margin:0;padding:10px 12px;background:#e9f3eb;color:#244f37;font-size:15px}
+.reaction-all-table-wrap{overflow:auto}
+.reaction-all-table{width:100%;border-collapse:collapse;background:#fff;font-size:12px;min-width:820px}
+.reaction-all-table th,.reaction-all-table td{padding:8px 9px;border-top:1px solid #e3e8e3;text-align:left;vertical-align:top}
+.reaction-all-table th{background:#f3f6f3;white-space:nowrap;color:#425247}
+.reaction-all-table .count{text-align:center;font-variant-numeric:tabular-nums;font-weight:800}
+.reaction-all-summary{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 0;color:var(--muted);font-size:12px}
+.whole-program-row{grid-template-columns:170px 105px 105px minmax(190px,1fr) minmax(145px,1fr) 70px}
+@media(max-width:800px){.whole-program-row{grid-template-columns:1fr 1fr}.whole-program-row label:nth-child(4),.whole-program-row label:nth-child(5){grid-column:1/-1}.whole-program-row button{grid-column:2}.reaction-guide-items{gap:6px 9px}.reaction-guide-items span{font-size:11px}}
+@media(max-width:480px){.reaction-choice{width:42px;height:42px;min-width:42px;min-height:42px}.reaction-choice span{font-size:20px}.reaction-guide{padding:10px}.reaction-guide-items span{font-size:10.5px}}

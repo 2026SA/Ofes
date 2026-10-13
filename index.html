@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#f8f7f3">
   <title>OFES｜おおフェス</title>
   <link rel="icon" type="image/png" href="assets/ofes-logo.png">
-  <link rel="stylesheet" href="style.css?v=18">
-  <script defer src="app.js?v=18"></script>
-  <script type="module" src="firebase-bridge.js?v=18"></script>
+  <link rel="stylesheet" href="style.css?v=19">
+  <script defer src="app.js?v=19"></script>
+  <script type="module" src="firebase-bridge.js?v=19"></script>
 </head>
 <body>
 <header class="hero">
@@ -25,8 +25,15 @@
   <section class="tab-view active" id="tab-program">
     <div class="section-heading"><h2>プログラム</h2><p>現在の時刻とセッションに合わせて表示します。</p></div>
     <div id="timeStatus" class="notice-card"></div>
-    <div class="subheading"><h3>全プログラム</h3><span class="muted">昨年度を参考にしたテストデータ</span></div>
-    <p class="reaction-intro">発表を見た感想を5種類のボタンで届けられます。複数選択でき、受付終了までは押し直し・取り消しができます。</p><div id="programList" class="program-list"></div>
+    <div class="reaction-guide" aria-label="リアクションの意味">
+      <strong>リアクションの意味</strong>
+      <div class="reaction-guide-items">
+        <span><b aria-hidden="true">👍</b> よかった</span><span><b aria-hidden="true">💡</b> なるほど</span><span><b aria-hidden="true">✨</b> すごい</span><span><b aria-hidden="true">😊</b> 楽しかった</span><span><b aria-hidden="true">🙌</b> 応援したい</span>
+      </div>
+      <small>午前の各学年発表は「会場案内」で教室をタップしてリアクションします。午後の体育館行事は、このプログラム画面からリアクションできます。</small>
+    </div>
+    <div class="subheading"><h3>全プログラム</h3><span class="muted">時間順に表示</span></div>
+    <div id="programList" class="program-list"></div>
   </section>
 
   <section class="tab-view" id="tab-venues">
@@ -39,6 +46,13 @@
     <div class="session-label">表示する時間帯</div>
     <div class="session-switch" id="sessionSwitch" aria-label="時間帯を選択"></div>
     <div id="mapSummary" class="info-strip" aria-live="polite"></div>
+    <div class="reaction-guide compact" aria-label="リアクションの意味">
+      <strong>発表へのリアクション</strong>
+      <div class="reaction-guide-items">
+        <span><b aria-hidden="true">👍</b> よかった</span><span><b aria-hidden="true">💡</b> なるほど</span><span><b aria-hidden="true">✨</b> すごい</span><span><b aria-hidden="true">😊</b> 楽しかった</span><span><b aria-hidden="true">🙌</b> 応援したい</span>
+      </div>
+      <small>教室をタップすると、その会場の各学年発表が時間順に表示されます。各発表カードのアイコンだけをタップして感想を届けます。</small>
+    </div>
     <p class="map-usage">最初は図面全体が見える大きさで表示します。拡大したときは図の中をスクロールできます。<strong>＋・−</strong> または2本指で拡大・縮小できます。会場をタップすると、各階の図の下に予定が表示されます。</p>
     <div id="visitorMaps" class="floor-stack" aria-label="校舎のフロア図"></div>
     <div class="legend"><span><i class="now"></i>選択中の時間帯で使用</span><span><i class="neutral"></i>登録済み会場</span></div>
@@ -54,7 +68,7 @@
 <div id="loginModal" class="modal" hidden><div class="modal-inner"><h2>管理画面を開く</h2><p class="muted">このパスワードはブラウザ内の試作設定を編集するための簡易ロックです。Firebaseの権限を与えるものではありません。</p><form id="loginForm"><label>管理者パスワード<input type="password" id="adminPassword" required autocomplete="current-password"></label><p id="loginError" class="error"></p><div class="modal-actions"><button type="button" class="btn light" id="cancelLogin">キャンセル</button><button type="submit" class="btn primary">ログイン</button></div></form></div></div>
 
 <section id="adminPanel" class="admin-panel" hidden>
-  <header class="admin-header"><div><span class="eyebrow">ADMINISTRATOR</span><h2>OFES 管理画面</h2><p>Ver.1.8 · セッション表記を分かりやすく改善</p></div><button id="closeAdmin" class="btn light">閉じる ×</button></header>
+  <header class="admin-header"><div><span class="eyebrow">ADMINISTRATOR</span><h2>OFES 管理画面</h2><p>Ver.1.9 · 発表単位リアクション／一括集計PDF</p></div><button id="closeAdmin" class="btn light">閉じる ×</button></header>
   <nav class="admin-tabs" id="adminNav" aria-label="管理項目"><button data-admin="firebase" class="active">🔑 Firebase接続</button><button data-admin="venues">会場・配置図</button><button data-admin="program">プログラム</button><button data-admin="reactions">リアクション集計</button><button data-admin="basic">年度・時刻テスト</button><button data-admin="notice">お知らせPDF</button><button data-admin="data">データ保存</button></nav>
 
   <div class="admin-page active" id="admin-firebase">
@@ -120,15 +134,23 @@
   </div>
 
   <div class="admin-page" id="admin-reactions">
+    <div class="editor-card reaction-batch-card">
+      <h3>リアクションを一括集計</h3>
+      <p class="muted">午前の各学年発表と、午後のリアクション対象プログラムをまとめてFirestoreから集計します。個々の投票者情報は表示しません。</p>
+      <div class="row-actions"><button type="button" id="reactionStatsLoadAll" class="btn primary">全発表を一括集計</button><button type="button" id="reactionStatsPdf" class="btn light" disabled>集計表をPDF出力（印刷画面）</button></div>
+      <p id="reactionStatsAllMessage" class="caption" role="status">管理者Googleログイン後に集計できます。</p>
+      <div id="reactionStatsAllResult" class="reaction-all-result" hidden></div>
+      <p class="caption">PDFは学年ごとにまとめ、学年の切り替わりで改ページします。印刷画面で「PDFとして保存」を選んでください。</p>
+    </div>
     <div class="editor-card basic-card">
-      <h3>リアクション集計（発表ごと）</h3>
-      <p class="muted">Firestoreに公開した発表に寄せられたリアクション数を確認します。ランキング表示はありません。個々の投票者情報は表示しません。</p>
-      <label>集計する発表<select id="reactionStatsProgram"><option value="">公開済みのプログラムを読み込み中…</option></select></label>
+      <h3>個別の発表を確認</h3>
+      <p class="muted">必要なときだけ、1つの発表を選んで詳しく確認できます。</p>
+      <label>集計する発表<select id="reactionStatsProgram"><option value="">公開済みの発表を読み込み中…</option></select></label>
       <button type="button" id="reactionStatsLoad" class="btn primary">この発表の集計を表示</button>
       <p id="reactionStatsMessage" class="caption" role="status">管理者Googleログイン後に確認できます。</p>
       <div id="reactionStatsResult" class="reaction-stats-result" hidden></div>
       <button type="button" id="reactionStatsExport" class="btn light" disabled>表示中の集計をCSVで保存</button>
-      <p class="caption">集計は閲覧時にFirestoreから取得します。来場者向けの画面には投票数を公開しません。</p>
+      <p class="caption">ランキング表示は行いません。来場者向け画面にも投票数は表示しません。</p>
     </div>
   </div>
 

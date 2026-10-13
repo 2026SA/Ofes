@@ -1,12 +1,12 @@
 /**
- * OFES Ver.1.10: Google Authentication + Firestore published content.
+ * OFES Ver.1.11: Google Authentication + Firestore published content.
  * 管理者はローカル下書きを明示的に公開する。来場者は認証なしで公開データを購読する。
  * セキュリティ境界は Firebase Security Rules（クライアントのパスワードではない）。
  */
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import {getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
         browserLocalPersistence, signInAnonymously, setPersistence} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-import {getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp, Timestamp} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import {getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, onSnapshot, serverTimestamp, Timestamp, writeBatch} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {firebaseConfig} from './firebase-config.js';
 
 const el = (id) => document.getElementById(id);
@@ -135,14 +135,21 @@ try{
   }
  };
  // 同じ端末での「選択済み」の表示を再現。送信時には必ずサーバーの本人文書を照会。
- function restoreCachedReactions(){
+ async function restoreCachedReactions(){
   const uid=auth.currentUser?.uid, date=publishedData?.eventDate;if(!uid||!date)return;
   const cache=readSelectionCache();
   const seen=new Set();
   for(const p of publishedData.programs||[]){
    const reactionId=p.reactionId||p.id;if(seen.has(reactionId))continue;seen.add(reactionId);
-   const sel=cache[`${date}|${reactionId}|${uid}`];
-   if(Array.isArray(sel))emitSelection(reactionId,sel,uid);
+   const key=`${date}|${reactionId}|${uid}`;
+   const cached=cache[key];
+   emitSelection(reactionId,Array.isArray(cached)?cached:[],uid);
+   try{
+    const snap=await getDoc(voteDoc(date,reactionId,uid));
+    const selected=snap.exists()&&Array.isArray(snap.data().selected)?snap.data().selected:[];
+    cacheSelection(date,reactionId,uid,selected);
+    emitSelection(reactionId,selected,uid);
+   }catch(error){console.warn('reaction sync failed',reactionId,error);}
   }
  }
  function isReactionTargetProgram(p){
@@ -280,7 +287,107 @@ try{
   w.document.open();w.document.write(html);w.document.close();
  });
 
- window.addEventListener('ofes-cloud-published',()=>{restoreCachedReactions();});
+ // Ver.1.11: 管理者用「全クリア」。削除前にFirestoreへ復元ポイントを作成し、成功した場合だけ削除する。
+ const clearButton=el('reactionClearAll'),restoreButton=el('reactionRestoreLatest'),clearMessage=el('reactionClearMessage'),restorePointLabel=el('reactionRestorePoint');
+ let latestRestorePoint=null;
+ const isGoogleAdmin=()=>!!auth.currentUser?.providerData?.some(x=>x.providerId==='google.com');
+ async function commitOps(ops){
+  for(let i=0;i<ops.length;i+=450){
+   const batch=writeBatch(db);
+   for(const op of ops.slice(i,i+450)){
+    if(op.type==='delete')batch.delete(op.ref);else batch.set(op.ref,op.data);
+   }
+   await batch.commit();
+  }
+ }
+ async function currentVoteSnapshot(){
+  if(!publishedData?.eventDate)throw Error('公開データがありません。');
+  const programIds=[...new Set(reactionTargetGroups().map(g=>g.reactionId))];
+  const votes=[];
+  for(const programId of programIds){
+   const snap=await getDocs(collection(db,'reactionEvents',publishedData.eventDate,'programs',programId,'votes'));
+   for(const d of snap.docs)votes.push({programId,voterUid:d.id,data:d.data(),liveRef:d.ref});
+  }
+  return {programIds,votes};
+ }
+ async function createRestorePoint(){
+  const {programIds,votes}=await currentVoteSnapshot();
+  if(!votes.length)return null;
+  const eventDate=publishedData.eventDate,backupId=`rp-${Date.now()}`,createdAtClient=new Date().toISOString();
+  const ops=votes.map(v=>({type:'set',ref:doc(db,'reactionBackups',eventDate,'points',backupId,'programs',v.programId,'votes',v.voterUid),data:{selected:Array.isArray(v.data.selected)?v.data.selected:[],version:Number(v.data.version||1),originalUpdatedAt:v.data.updatedAt||null}}));
+  await commitOps(ops);
+  await setDoc(doc(db,'reactionBackups',eventDate,'points',backupId),{schemaVersion:1,complete:true,eventDate,programIds,voteCount:votes.length,createdAt:serverTimestamp(),createdAtClient,createdByUid:auth.currentUser.uid});
+  return {backupId,eventDate,programIds,voteCount:votes.length,createdAtClient,votes};
+ }
+ async function refreshRestorePointInfo(){
+  if(!restorePointLabel||!restoreButton)return;
+  latestRestorePoint=null;
+  restoreButton.disabled=true;
+  if(!isGoogleAdmin()||!publishedData?.eventDate){restorePointLabel.textContent='管理者Googleログイン後に復元ポイントを確認できます。';return;}
+  try{
+   const snap=await getDocs(collection(db,'reactionBackups',publishedData.eventDate,'points'));
+   const points=snap.docs.map(d=>({backupId:d.id,...d.data()})).filter(x=>x.complete).sort((a,b)=>String(b.createdAtClient||'').localeCompare(String(a.createdAtClient||'')));
+   latestRestorePoint=points[0]||null;
+   if(!latestRestorePoint){restorePointLabel.textContent='復元ポイントはまだありません。全クリアを実行すると直前に自動作成されます。';return;}
+   const when=new Date(latestRestorePoint.createdAtClient).toLocaleString('ja-JP');
+   restorePointLabel.textContent=`最新の復元ポイント：${when}／${latestRestorePoint.voteCount||0}件`;
+   restoreButton.disabled=false;
+  }catch(error){restorePointLabel.textContent=`復元ポイントを確認できませんでした：${errorText(error)}`;}
+ }
+ function resetStatsAfterMutation(message){
+  latestStats=null;latestAllStats=[];
+  if(statsOut)statsOut.hidden=true;if(allOut)allOut.hidden=true;
+  if(el('reactionStatsExport'))el('reactionStatsExport').disabled=true;if(pdfButton)pdfButton.disabled=true;
+  if(allMessage)allMessage.textContent=message;if(statsMessage)statsMessage.textContent='リアクションが変更されたため、必要に応じて再集計してください。';
+ }
+ clearButton?.addEventListener('click',async()=>{
+  if(!isGoogleAdmin()){clearMessage.textContent='管理者Googleログインが必要です。';return;}
+  if(!publishedData?.eventDate){clearMessage.textContent='公開データがありません。';return;}
+  const ok=confirm('【リアクション全クリア】\n\n現在公開中の発表に保存されているリアクションをすべて削除します。\n削除の直前にFirestoreへ復元ポイントを自動保存し、復元ポイントの保存に成功した場合だけクリアします。\n\n続けますか？');
+  if(!ok)return;
+  clearButton.disabled=true;restoreButton.disabled=true;clearMessage.textContent='復元ポイントを作成しています…';
+  try{
+   const point=await createRestorePoint();
+   if(!point){clearMessage.textContent='保存されているリアクションがないため、クリアは実行しませんでした。';await refreshRestorePointInfo();return;}
+   clearMessage.textContent=`復元ポイントを保存しました（${point.voteCount}件）。続けて全クリアしています…`;
+   await commitOps(point.votes.map(v=>({type:'delete',ref:v.liveRef})));
+   await setDoc(publicDoc,{reactionRevision:Date.now()},{merge:true});
+   resetStatsAfterMutation(`全リアクションをクリアしました。復元ポイント ${point.backupId} から戻せます。`);
+   clearMessage.textContent=`全リアクションをクリアしました。クリア直前の${point.voteCount}件を復元ポイントとして保存済みです。`;
+   await refreshRestorePointInfo();
+  }catch(error){clearMessage.textContent=`全クリアを中止しました：${errorText(error)}。復元ポイントの保存または削除処理が完了していません。`;await refreshRestorePointInfo();}
+  finally{clearButton.disabled=!isGoogleAdmin();}
+ });
+ restoreButton?.addEventListener('click',async()=>{
+  if(!isGoogleAdmin()){clearMessage.textContent='管理者Googleログインが必要です。';return;}
+  await refreshRestorePointInfo();
+  const point=latestRestorePoint;if(!point)return;
+  const when=new Date(point.createdAtClient).toLocaleString('ja-JP');
+  if(!confirm(`最新の復元ポイント（${when}／${point.voteCount||0}件）からリアクションを復元します。\n現在のリアクションは、この復元ポイントの内容に置き換わります。\n\n復元しますか？`))return;
+  clearButton.disabled=true;restoreButton.disabled=true;clearMessage.textContent='復元ポイントを読み込んでいます…';
+  try{
+   const programIds=Array.isArray(point.programIds)?point.programIds:[];
+   const live=await currentVoteSnapshot();
+   await commitOps(live.votes.map(v=>({type:'delete',ref:v.liveRef})));
+   const restoreOps=[];
+   let restored=0;
+   for(const programId of programIds){
+    const snap=await getDocs(collection(db,'reactionBackups',point.eventDate,'points',point.backupId,'programs',programId,'votes'));
+    for(const d of snap.docs){
+     const data=d.data();
+     restoreOps.push({type:'set',ref:voteDoc(point.eventDate,programId,d.id),data:{selected:Array.isArray(data.selected)?data.selected:[],version:Number(data.version||1),updatedAt:serverTimestamp()}});
+     restored++;
+    }
+   }
+   await commitOps(restoreOps);
+   await setDoc(publicDoc,{reactionRevision:Date.now()},{merge:true});
+   resetStatsAfterMutation(`復元ポイントから${restored}件を復元しました。`);
+   clearMessage.textContent=`復元しました：${restored}件。必要に応じて「全発表を一括集計」で確認してください。`;
+  }catch(error){clearMessage.textContent=`復元できませんでした：${errorText(error)}`;}
+  finally{clearButton.disabled=!isGoogleAdmin();await refreshRestorePointInfo();}
+ });
+
+ window.addEventListener('ofes-cloud-published',()=>{restoreCachedReactions();refreshRestorePointInfo();});
  onAuthStateChanged(auth,()=>{restoreCachedReactions();});
 
  // Firestore listener: visitors require no sign-in. Fetches once and listens for publication updates.
@@ -306,6 +413,7 @@ try{
   account.hidden=!isGoogle;
   window.dispatchEvent(new CustomEvent('ofes-reaction-uid',{detail:{uid:user?.uid||''}}));
   setUiState();
+  if(clearButton)clearButton.disabled=!isGoogle;if(restoreButton&&!isGoogle)restoreButton.disabled=true;refreshRestorePointInfo();
   status(readResult,isGoogle?'Firestoreの読み取り権限を確認できます。':'管理者Googleログイン後に確認できます。');
   if(isGoogle){
    status(authStatus,'Googleログイン成功','ok');
@@ -364,7 +472,7 @@ try{
    const deadlineDate=new Date(`${payload.reactionDeadline}:00+09:00`);
    if(!Number.isFinite(deadlineDate.getTime()))throw Error('リアクション受付終了日時の形式が正しくありません。');
    // ファイル内の旧スキーマは変えず、公開ドキュメントにだけ timestamp を追加する。
-   await setDoc(publicDoc,{...payload,programIds:[...new Set(payload.programs.map(p=>p.reactionId||p.id))],reactionDeadlineAt:Timestamp.fromDate(deadlineDate),updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid});
+   await setDoc(publicDoc,{...payload,programIds:[...new Set(payload.programs.map(p=>p.reactionId||p.id))],reactionDeadlineAt:Timestamp.fromDate(deadlineDate),reactionRevision:Number(publishedData?.reactionRevision||0),updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid});
    status(publishMessage,'Firestoreへの公開が完了しました。別の端末でも同じ内容を閲覧できます。','ok');
   }catch(error){status(publishMessage,`公開に失敗：${errorText(error)}`,'error');}
   finally{isBusy=false;setUiState();}

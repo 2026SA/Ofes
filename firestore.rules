@@ -10,7 +10,7 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // 公開するのはプログラム・会場情報・受付期限のみ。
+    // 公開するのはプログラム・会場情報・受付期限など、来場者向けデータのみ。
     match /published/site {
       allow get: if true;
       allow list: if false;
@@ -23,7 +23,7 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
-    // 来場者の選択は、イベント日×プログラム×認証UIDごとに1件。
+    // 来場者の選択は、イベント日×発表×認証UIDごとに1件。
     match /reactionEvents/{eventDate}/programs/{programId}/votes/{voterUid} {
       function sitePath() {
         return /databases/$(database)/documents/published/site;
@@ -45,11 +45,16 @@ service cloud.firestore {
           && request.resource.data.selected.hasOnly(['good', 'aha', 'amazing', 'fun', 'cheer'])
           && request.resource.data.updatedAt == request.time;
       }
-      // 本人は自分の分だけ読める。管理者は集計のため全件を読める。
+      // 本人は自分の分だけ読める。管理者は集計・全クリア・復元のため全件を扱える。
       allow get: if isAdmin() || isSelf(voterUid);
       allow list: if isAdmin();
-      allow create, update: if isSelf(voterUid) && isAccepting() && validReaction();
-      allow delete: if isSelf(voterUid) && isAccepting();
+      allow create, update: if isAdmin() || (isSelf(voterUid) && isAccepting() && validReaction());
+      allow delete: if isAdmin() || (isSelf(voterUid) && isAccepting());
+    }
+
+    // 全クリア直前に作る復元ポイント。管理者以外は一切アクセス不可。
+    match /reactionBackups/{document=**} {
+      allow read, write: if isAdmin();
     }
 
     match /{document=**} {

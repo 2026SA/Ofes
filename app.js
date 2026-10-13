@@ -136,6 +136,7 @@ window.OFESCloud={
 window.addEventListener('ofes-cloud-published',e=>acceptPublished(e.detail?.data??null));
 
 let visitorBuilding='campus',session='current',visitorSelected='';
+let programReturnScrollY=0;
 let reactionPreviewMode=false,reactionPreviewProgram=null;
 const visitorZoom=Object.fromEntries(MAPS.map(m=>[m.id,100]));
 let adminMap='campus',editId='',editDraft=null,drawMode='',dragStart=null,dragRect=null,adminProgramVenue='';
@@ -196,6 +197,7 @@ function renderProgram(){
  }).join('');
  $$('[data-see]').forEach(b=>b.onclick=()=>{
   if(!b.dataset.see)return;
+  programReturnScrollY=window.scrollY;
   const z=getZone(b.dataset.see);if(!z)return;
   visitorBuilding=getMap(z.mapId).building;visitorSelected=z.id;session='current';
   setTab('venues',{scrollTop:false});
@@ -215,6 +217,10 @@ function renderBuildingTabs(){
 $$('#buildingTabs [data-building]').forEach(b=>b.onclick=()=>{
  visitorBuilding=b.dataset.building;visitorSelected='';renderVisitorMap();
  byId('buildingTabs').scrollIntoView({behavior:'smooth',block:'start'});
+});
+byId('returnToProgram')?.addEventListener('click',()=>{
+ setTab('program',{scrollTop:false});
+ requestAnimationFrame(()=>window.scrollTo({top:programReturnScrollY||0,behavior:'smooth'}));
 });
 function renderSessionButtons(){
  const shortMarks={s1:'①',s2:'②',s3:'③',s4:'④'};

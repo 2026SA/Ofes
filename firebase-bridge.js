@@ -1,5 +1,5 @@
 /**
- * OFES Ver.1.14: Google Authentication + Firestore published content.
+ * OFES Ver.1.15: Google Authentication + Firestore published content.
  * 管理者はローカル下書きを明示的に公開する。来場者は認証なしで公開データを購読する。
  * セキュリティ境界は Firebase Security Rules（クライアントのパスワードではない）。
  */
@@ -242,7 +242,7 @@ try{
   const a=document.createElement('a');a.href=url;a.download=`OFES_リアクション集計_${latestStats.eventDate}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
  });
 
- const allButton=el('reactionStatsLoadAll'),allOut=el('reactionStatsAllResult'),allMessage=el('reactionStatsAllMessage'),pdfButton=el('reactionStatsPdf');
+ const allButton=el('reactionStatsLoadAll'),allOut=el('reactionStatsAllResult'),allMessage=el('reactionStatsAllMessage'),pdfOverallButton=el('reactionStatsPdfOverall'),pdfGradeButton=el('reactionStatsPdfGrade');
  function statsByGrade(){
   const groups=new Map();
   for(const item of latestAllStats){
@@ -274,7 +274,7 @@ try{
   if(!auth.currentUser?.providerData?.some(x=>x.providerId==='google.com')){allMessage.textContent='管理者Googleログインが必要です。';return;}
   const groups=reactionTargetGroups();
   if(!groups.length){allMessage.textContent='集計対象の発表がありません。';return;}
-  allButton.disabled=true;pdfButton.disabled=true;allOut.hidden=true;latestAllStats=[];
+  allButton.disabled=true;if(pdfOverallButton)pdfOverallButton.disabled=true;if(pdfGradeButton)pdfGradeButton.disabled=true;allOut.hidden=true;latestAllStats=[];
   allMessage.textContent=`全${groups.length}発表をFirestoreから集計しています…`;
   try{
    const results=[];
@@ -283,20 +283,36 @@ try{
     allMessage.textContent=`集計中 ${i+1}/${groups.length}：${p.grade?`${p.grade} `:''}${p.group?`${p.group} `:''}${p.title}`;
     results.push(await collectOneTarget(groups[i]));
    }
-   latestAllStats=results;renderAllStats();allOut.hidden=false;pdfButton.disabled=false;
+   latestAllStats=results;renderAllStats();allOut.hidden=false;if(pdfOverallButton)pdfOverallButton.disabled=false;if(pdfGradeButton)pdfGradeButton.disabled=false;
    const totalRespondents=results.reduce((sum,x)=>sum+x.respondents,0);
    allMessage.textContent=`全${results.length}発表グループを集計しました。グループごとの集計を保持しています。各発表の回答者数の合計は${totalRespondents}です。`;
   }catch(error){allMessage.textContent=`一括集計できませんでした：${errorText(error)}`;}
   finally{allButton.disabled=false;}
  });
  function htmlEsc(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
- pdfButton?.addEventListener('click',()=>{
+ function openReactionPrintWindow(name,title,bodyHtml,extraCss=''){
+  const w=window.open('',name,'width=1100,height=850');
+  if(!w){allMessage.textContent='PDF出力画面を開けませんでした。ポップアップを許可してください。';return null;}
+  const css=`@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans JP","Yu Gothic",Meiryo,sans-serif;color:#172019;margin:0;font-size:9pt}h1{font-size:17pt;margin:0 0 2mm}h2{font-size:14pt;margin:0 0 2.5mm;border-left:5px solid #197a4b;padding-left:8px}.meta{margin:0 0 4mm;color:#526058;font-size:8.5pt}.message{margin:0 0 4mm;padding:3mm 4mm;border-radius:8px;background:#f1f8f2;border:1px solid #cfe0d1;font-size:9.2pt;line-height:1.55}.message strong{font-size:10.5pt;color:#176c42}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th,td{border:1px solid #cfd7d0;padding:2mm 1.5mm;vertical-align:top;overflow-wrap:anywhere}th{background:#edf4ee;font-size:8.2pt}th.react,td.react{text-align:center;padding-left:.7mm;padding-right:.7mm}td.num{text-align:center;font-weight:700}.joint{display:block;margin-top:1mm;color:#637168;font-size:7.2pt;line-height:1.3}.note{margin-top:3mm;font-size:8pt;color:#59655d}.printbar{position:fixed;top:10px;right:10px;z-index:5}.printbar button{padding:9px 14px;font-size:14px}.grade-page{break-after:page;page-break-after:always}.grade-page:last-of-type{break-after:auto;page-break-after:auto}${extraCss}@media print{.printbar{display:none}}`;
+  const html=`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${htmlEsc(title)}</title><style>${css}</style></head><body><div class="printbar"><button onclick="window.print()">印刷／PDFとして保存</button></div>${bodyHtml}</body></html>`;
+  w.document.open();w.document.write(html);w.document.close();return w;
+ }
+ function overallStatsSorted(){
+  return latestAllStats.slice().sort((a,b)=>{
+   const ga=a.gradeLabels?.[0]||a.grade,gb=b.gradeLabels?.[0]||b.grade;
+   return gradeOrder(ga)-gradeOrder(gb)||String(a.grade).localeCompare(String(b.grade),'ja',{numeric:true})||String(a.groupName).localeCompare(String(b.groupName),'ja',{numeric:true})||String(a.title).localeCompare(String(b.title),'ja');
+  });
+ }
+ pdfOverallButton?.addEventListener('click',()=>{
   if(!latestAllStats.length)return;
-  const sections=statsByGrade().map(([grade,items],index)=>`<section class="grade ${index?'pagebreak':''}"><h2>${htmlEsc(grade)} リアクション集計</h2><table><colgroup><col class="c-group"><col class="c-title"><col class="c-time"><col class="c-place"><col class="c-respond"><col class="c-react"><col class="c-react"><col class="c-react"><col class="c-react"><col class="c-react"></colgroup><thead><tr><th>グループ</th><th>発表内容</th><th>実施時間</th><th>会場</th><th>回答</th><th class="react">👍</th><th class="react">💡</th><th class="react">✨</th><th class="react">😊</th><th class="react">🙌</th></tr></thead><tbody>${items.map(item=>`<tr><td>${htmlEsc(item.groupName)}${item.gradeLabels?.length>1?`<small class="joint">${htmlEsc(item.grade)}合同</small>`:''}</td><td>${htmlEsc(item.title)}</td><td>${item.schedules.map(htmlEsc).join('<br>')}</td><td>${htmlEsc(item.zoneName)}</td><td class="num">${item.respondents}</td>${REACTION_KEYS.map(k=>`<td class="num react">${item.counts[k]}</td>`).join('')}</tr>`).join('')}</tbody></table></section>`).join('');
-  const w=window.open('','OFES_REACTION_PDF','width=1100,height=850');
-  if(!w){allMessage.textContent='PDF出力画面を開けませんでした。ポップアップを許可してください。';return;}
-  const html=`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>OFES リアクション集計</title><style>@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans JP","Yu Gothic",Meiryo,sans-serif;color:#172019;margin:0;font-size:9pt}h1{font-size:17pt;margin:0 0 2mm}h2{font-size:13.5pt;margin:0 0 3mm;border-left:5px solid #197a4b;padding-left:8px}.meta{margin:0 0 4mm;color:#526058;font-size:8.5pt}table{width:100%;border-collapse:collapse;table-layout:fixed}col.c-group{width:9%}col.c-title{width:32%}col.c-time{width:24%}col.c-place{width:10%}col.c-respond{width:5%}col.c-react{width:4%}thead{display:table-header-group}th,td{border:1px solid #cfd7d0;padding:2mm 1.5mm;vertical-align:top;overflow-wrap:anywhere}th{background:#edf4ee;font-size:8.2pt}th.react,td.react{text-align:center;padding-left:.7mm;padding-right:.7mm}td.num{text-align:center;font-weight:700}.joint{display:block;margin-top:1mm;color:#637168;font-size:7.2pt;line-height:1.3}.pagebreak{break-before:page;page-break-before:always}.note{margin-top:3mm;font-size:8pt;color:#59655d}.printbar{position:fixed;top:10px;right:10px}.printbar button{padding:9px 14px;font-size:14px}@media print{.printbar{display:none}}</style></head><body><div class="printbar"><button onclick="window.print()">印刷／PDFとして保存</button></div><h1>OFES リアクション集計表</h1><p class="meta">${htmlEsc(publishedData.year||'')}年度　開催日：${htmlEsc(publishedData.eventDate||'')}　発表グループごとに集計しています。合同発表は該当する各学年のページに同じ集計を掲載します。</p>${sections}<p class="note">※ 個人を特定する情報は掲載していません。回答者数は発表グループごとの匿名回答数です。</p></body></html>`;
-  w.document.open();w.document.write(html);w.document.close();
+  const rows=overallStatsSorted().map(item=>`<tr><td>${htmlEsc(item.grade)}</td><td>${htmlEsc(item.groupName)}</td><td>${htmlEsc(item.title)}</td><td>${item.schedules.map(htmlEsc).join('<br>')}</td><td>${htmlEsc(item.zoneName)}</td><td class="num">${item.respondents}</td>${REACTION_KEYS.map(k=>`<td class="num react">${item.counts[k]}</td>`).join('')}</tr>`).join('');
+  const body=`<h1>OFES リアクション全体集計</h1><p class="meta">${htmlEsc(publishedData.year||'')}年度　開催日：${htmlEsc(publishedData.eventDate||'')}　全発表グループを重複なく一覧表示しています。</p><table><colgroup><col class="c-grade"><col class="c-group"><col class="c-title"><col class="c-time"><col class="c-place"><col class="c-respond"><col class="c-react"><col class="c-react"><col class="c-react"><col class="c-react"><col class="c-react"></colgroup><thead><tr><th>学年</th><th>グループ</th><th>発表内容</th><th>実施時間</th><th>会場</th><th>回答</th><th class="react">👍</th><th class="react">💡</th><th class="react">✨</th><th class="react">😊</th><th class="react">🙌</th></tr></thead><tbody>${rows}</tbody></table><p class="note">※ 合同発表も全体版では1つの発表グループとして1行だけ掲載します。個人を特定する情報は掲載していません。</p>`;
+  openReactionPrintWindow('OFES_REACTION_ALL','OFES リアクション全体集計',body,'col.c-grade{width:8%}col.c-group{width:8%}col.c-title{width:27%}col.c-time{width:19%}col.c-place{width:10%}col.c-respond{width:4%}col.c-react{width:4.8%}');
+ });
+ pdfGradeButton?.addEventListener('click',()=>{
+  if(!latestAllStats.length)return;
+  const sections=statsByGrade().map(([grade,items])=>`<section class="grade-page"><h1>OFES リアクションフィードバック</h1><h2>${htmlEsc(grade)}のみなさんへ</h2><div class="message"><strong>発表、おつかれさまでした！</strong><br>この表は、みなさんの発表を見た人から届いたリアクションをまとめたものです。数字の大小は順位ではありません。どんなところが伝わったのか、どんなよさや工夫があったのかを振り返り、次の学びや発表につなげていきましょう。</div><p class="meta">${htmlEsc(publishedData.year||'')}年度　開催日：${htmlEsc(publishedData.eventDate||'')}</p><table><colgroup><col class="c-group"><col class="c-title"><col class="c-time"><col class="c-place"><col class="c-respond"><col class="c-react"><col class="c-react"><col class="c-react"><col class="c-react"><col class="c-react"></colgroup><thead><tr><th>グループ</th><th>発表内容</th><th>実施時間</th><th>会場</th><th>回答</th><th class="react">👍</th><th class="react">💡</th><th class="react">✨</th><th class="react">😊</th><th class="react">🙌</th></tr></thead><tbody>${items.map(item=>`<tr><td>${htmlEsc(item.groupName)}${item.gradeLabels?.length>1?`<small class="joint">${htmlEsc(item.grade)}合同</small>`:''}</td><td>${htmlEsc(item.title)}</td><td>${item.schedules.map(htmlEsc).join('<br>')}</td><td>${htmlEsc(item.zoneName)}</td><td class="num">${item.respondents}</td>${REACTION_KEYS.map(k=>`<td class="num react">${item.counts[k]}</td>`).join('')}</tr>`).join('')}</tbody></table><p class="note">※ 合同発表は、関係するそれぞれの学年のページに同じ集計を掲載しています。リアクションは発表グループごとの集計です。</p></section>`).join('');
+  openReactionPrintWindow('OFES_REACTION_BY_GRADE','OFES 学年別リアクションフィードバック',sections,'col.c-group{width:9%}col.c-title{width:32%}col.c-time{width:24%}col.c-place{width:10%}col.c-respond{width:5%}col.c-react{width:4%}.grade-page{min-height:185mm}');
  });
 
  // Ver.1.11: 管理者用「全クリア」。削除前にFirestoreへ復元ポイントを作成し、成功した場合だけ削除する。
@@ -349,7 +365,7 @@ try{
  function resetStatsAfterMutation(message){
   latestStats=null;latestAllStats=[];
   if(statsOut)statsOut.hidden=true;if(allOut)allOut.hidden=true;
-  if(el('reactionStatsExport'))el('reactionStatsExport').disabled=true;if(pdfButton)pdfButton.disabled=true;
+  if(el('reactionStatsExport'))el('reactionStatsExport').disabled=true;if(pdfOverallButton)pdfOverallButton.disabled=true;if(pdfGradeButton)pdfGradeButton.disabled=true;
   if(allMessage)allMessage.textContent=message;if(statsMessage)statsMessage.textContent='リアクションが変更されたため、必要に応じて再集計してください。';
  }
  clearButton?.addEventListener('click',async()=>{

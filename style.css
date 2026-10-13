@@ -12,9 +12,9 @@
 
 
 /* Ver.1.1: public venue guide: one page per building, stacked floor diagrams. */
-.building-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin-bottom:2px}
+.building-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px;margin-bottom:2px}
 .building-tabs button{display:flex;align-items:center;justify-content:center;gap:6px;padding:12px 4px;min-height:48px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font-weight:800;font-size:14px}
-.building-tabs button.active{background:var(--green);border-color:var(--green);color:white;box-shadow:0 2px 5px #244e2b22}
+.building-tabs button.active{background:var(--green);border-color:var(--green);color:white;box-shadow:0 2px 5px #244e2b22}.building-tabs .return-program{background:#fff8e7;border-color:#e2c36c;color:#5b4510}.building-tabs .return-program:hover{background:#fff1c7}
 .map-usage{font-size:12px;color:var(--muted);line-height:1.65;margin:12px 1px}
 .floor-stack{display:grid;gap:18px;margin-top:14px}
 .floor-card{min-width:0;background:white;border:1px solid var(--line);border-radius:16px;padding:11px;scroll-margin-top:80px;box-shadow:0 1px 3px #172d180a}
@@ -36,7 +36,7 @@
 .floor-detail .pill{display:inline-block;background:#e5eee7;border-radius:8px;color:#2d664a;padding:2px 7px;font-size:12px}
 .floor-detail p{margin:7px 0}
 .floor-detail ul{margin:7px 0;padding-left:20px;line-height:1.8}
-@media(max-width:520px){.building-tabs{gap:5px}.building-tabs button{font-size:12px;gap:4px;padding:9px 2px;min-height:47px}.floor-card{padding:9px}.floor-card-header h3{font-size:18px}.floor-tools>span{font-size:11px}.floor-zoom{gap:2px}.floor-zoom button{min-width:29px;height:32px}.floor-zoom span{min-width:37px;font-size:12px}.floor-zoom .zoom-reset{min-width:36px;font-size:11px;padding:0 3px}}
+@media(max-width:520px){.building-tabs{gap:4px}.building-tabs button{font-size:11px;gap:3px;padding:8px 2px;min-height:50px}.building-tabs .return-program span{line-height:1.15}.floor-card{padding:9px}.floor-card-header h3{font-size:18px}.floor-tools>span{font-size:11px}.floor-zoom{gap:2px}.floor-zoom button{min-width:29px;height:32px}.floor-zoom span{min-width:37px;font-size:12px}.floor-zoom .zoom-reset{min-width:36px;font-size:11px;padding:0 3px}}
 
 /* Ver.1.2: floor diagrams fit in full on first display; internal scroll only when zoomed. */
 .floor-map-window{max-height:none;overflow:visible;}

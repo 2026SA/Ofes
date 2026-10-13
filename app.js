@@ -86,6 +86,8 @@ try {hasLegacyDraft=!!localStorage.getItem(STORAGE_KEY);} catch(e) {console.warn
 let draftState=getSaved();
 let publishedState=null;
 let editorActive=false;
+// デモ登録後は、この端末だけ下書きを来場者画面で即時プレビューする。再読み込みすると解除される。
+let demoDraftPreview=false;
 let state=draftState;
 let cloudAvailable=false;
 const schemaVersion=5;
@@ -100,7 +102,7 @@ function acceptPublished(doc){
  try {
   publishedState=doc?validData({...doc,test:{enabled:false,date:doc.eventDate||DEFAULT_DATA.eventDate,time:'09:25'}}):null;
   cloudAvailable=!!publishedState;
-  if(!editorActive){state=publishedState||draftState;renderPublic();}
+  if(!editorActive && !demoDraftPreview){state=publishedState||draftState;renderPublic();}
  }catch(e){console.error('公開データの形式が不正です',e);toast('Firestoreの公開データを読み込めませんでした。');}
 }
 function switchDraft(){
@@ -112,7 +114,7 @@ function switchDraft(){
  }
  state=draftState;
 }
-function closeDraft(){editorActive=false;state=publishedState||draftState;renderPublic();}
+function closeDraft(){editorActive=false;state=demoDraftPreview?draftState:(publishedState||draftState);renderPublic();}
 window.OFESCloud={
   exportPublished:()=>projectPublished(draftState),
   publishedSummary:()=>({exists:cloudAvailable,year:publishedState?.year,zones:publishedState?.zones.length||0,programs:publishedState?.programs.length||0}),
@@ -325,7 +327,7 @@ function readStampFromUrl(){const v=new URLSearchParams(location.search).get('st
  const current=stampList();if(!current.includes(n)){current.push(n);localStorage.setItem(STAMP_KEY,JSON.stringify(current));}
  renderStamps();setTab('stamp');}
 
-// Ver.1.11: 午前は会場詳細の各発表、午後はプログラム画面の各演目にリアクションを表示する。
+// Ver.1.12: 午前は会場詳細の各発表、午後はプログラム画面の各演目にリアクションを表示する。
 const REACTION_KINDS=[['good','👍','よかった'],['aha','💡','なるほど'],['amazing','✨','すごい'],['fun','😊','楽しかった'],['cheer','🙌','応援したい']];
 const reactionSelection={};
 let currentReactionUid='';
@@ -507,23 +509,36 @@ function adminUnassignedRow(p){return `<div class="venue-program-admin-row legac
 function adminOtherProgramRow(p){return `<div class="admin-program-row whole-program-row" data-program="${esc(p.id)}"><label>区分<select data-opfield="session"><option value="afternoon" ${p.session==='afternoon'?'selected':''}>午後（リアクション対象）</option><option value="other" ${p.session!=='afternoon'?'selected':''}>その他（リアクションなし）</option></select></label><label>開始<input type="time" data-opfield="start" value="${esc(p.start)}"></label><label>終了<input type="time" data-opfield="end" value="${esc(p.end)}"></label><label>内容<input data-opfield="title" maxlength="120" value="${esc(p.title)}"></label><label>会場<select data-opfield="zoneId">${roomOptions(p.zoneId)}</select></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
 function demoProgramRows(){
  const eligible=state.zones.filter(z=>!['building','parking'].includes(z.kind));
- const rooms=eligible.length?eligible:state.zones.slice();
- if(!rooms.length)return [];
- const defs=[
-  ['s1','7年生','大豊町の魅力を伝えよう'],
-  ['s2','8年生','地域の課題と未来を考える'],
-  ['s3','9年生','探究学習の成果発表'],
-  ['s4','7年生','英語で学校紹介']
+ const preferred=[...eligible.filter(z=>z.kind==='classroom'),...eligible.filter(z=>z.kind!=='classroom')];
+ const unique=[];const seen=new Set();for(const z of preferred){if(!seen.has(z.id)){seen.add(z.id);unique.push(z);}}
+ if(!unique.length)return [];
+ const gradeDemos=[
+  ['1年生','大豊町で見つけたすてきなもの'],
+  ['2年生','まちのおすすめを紹介しよう'],
+  ['3年生','大豊町の自然を調べよう'],
+  ['4年生','地域の人から学んだこと'],
+  ['5年生','大豊町の産業とくらし'],
+  ['6年生','未来の大豊町を考える'],
+  ['7年生','大豊町の魅力を英語で伝えよう'],
+  ['8年生','地域の課題と解決策を考える'],
+  ['9年生','探究学習の成果と提案']
  ];
- const rows=[];
- defs.forEach(([sid,grade,title],i)=>{
-  const room=rooms.find(z=>!state.programs.some(p=>!String(p.id).startsWith('demo-')&&p.zoneId===z.id&&p.session===sid));
-  if(!room)return;
+ const rows=[];let demoIndex=0;
+ for(const sid of SESSION_IDS){
+  // 同じセッションに本番発表が登録済みの会場は避け、空いている会場を最大4か所使う。
+  const rooms=unique.filter(z=>!state.programs.some(p=>!String(p.id).startsWith('demo-')&&p.zoneId===z.id&&p.session===sid)).slice(0,4);
   const d=sessionDef(sid);
-  rows.push({id:`demo-${sid}`,reactionId:`demo-reaction-${sid}`,session:sid,start:d.start,end:d.end,grade,title,zoneId:room.id});
- });
- const hall=rooms.find(z=>z.kind==='hall')||rooms[0];
- if(hall)rows.push({id:'demo-afternoon',reactionId:'demo-reaction-afternoon',session:'afternoon',start:'13:20',end:'13:40',grade:'9年生',title:'午後ステージ発表（デモ）',zoneId:hall.id});
+  rooms.forEach((room,roomIndex)=>{
+   const gradeIndex=demoIndex%gradeDemos.length;
+   const [grade,title]=gradeDemos[gradeIndex];
+   rows.push({
+    id:`demo-${sid}-${roomIndex+1}`,
+    reactionId:`demo-reaction-grade-${gradeIndex+1}`,
+    session:sid,start:d.start,end:d.end,grade,title,zoneId:room.id
+   });
+   demoIndex++;
+  });
+ }
  return rows;
 }
 function addDemoPrograms(){
@@ -532,9 +547,15 @@ function addDemoPrograms(){
  if(!demo.length){alert('デモ発表を置ける会場がありません。');return;}
  state.programs=state.programs.filter(p=>!String(p.id).startsWith('demo-'));
  state.programs.push(...demo);
- if(demo[0]?.zoneId)adminProgramVenue=demo[0].zoneId;
+ if(demo[0]?.zoneId){
+  adminProgramVenue=demo[0].zoneId;
+  const firstZone=getZone(demo[0].zoneId);
+  if(firstZone)visitorBuilding=getMap(firstZone.mapId).building;
+ }
+ // 登録直後に場所の反映を確認しやすいよう、同じ端末では下書きを公開画面へ即時プレビューする。
+ demoDraftPreview=true;session='s1';visitorSelected='';state=draftState;
  persist();renderAdminPrograms();renderPublic();
- const msg=byId('demoDataMessage');if(msg)msg.textContent=`デモ発表を${demo.length}件登録しました。下書きのみの変更です。別ブラウザで試す場合は「データ保存」→「Firestoreへ公開」を押してください。`;
+ const msg=byId('demoDataMessage');if(msg)msg.textContent=`デモ発表を${demo.length}件登録しました。最大4会場×4セッションで、1〜9年生の発表を配置しています。この端末では会場案内にも即時反映します。別ブラウザで試す場合は「データ保存」→「Firestoreへ公開」を押してください。`;
  toast('デモデータを登録しました');
 }
 function removeDemoPrograms(){
@@ -542,8 +563,9 @@ function removeDemoPrograms(){
  if(!n){const msg=byId('demoDataMessage');if(msg)msg.textContent='削除するデモデータはありません。';return;}
  if(!confirm(`デモ用プログラム${n}件を下書きから削除します。実際に登録した会場や本番プログラムは削除しません。よろしいですか？`))return;
  state.programs=state.programs.filter(p=>!String(p.id).startsWith('demo-'));
+ demoDraftPreview=true;state=draftState;
  persist();renderAdminPrograms();renderPublic();
- const msg=byId('demoDataMessage');if(msg)msg.textContent='デモ用プログラムを削除しました。Firestoreへ公開済みの場合は、再度公開すると来場者画面からも消えます。';
+ const msg=byId('demoDataMessage');if(msg)msg.textContent='デモ用プログラムを削除しました。この端末の会場案内にも即時反映しています。Firestoreへ公開済みの場合は、再度公開すると他端末からも消えます。';
  toast('デモデータを削除しました');
 }
 function bindAdminProgramEvents(){

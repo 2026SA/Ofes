@@ -101,3 +101,11 @@
 .whole-program-row{grid-template-columns:170px 105px 105px minmax(190px,1fr) minmax(145px,1fr) 70px}
 @media(max-width:800px){.whole-program-row{grid-template-columns:1fr 1fr}.whole-program-row label:nth-child(4),.whole-program-row label:nth-child(5){grid-column:1/-1}.whole-program-row button{grid-column:2}.reaction-guide-items{gap:6px 9px}.reaction-guide-items span{font-size:11px}}
 @media(max-width:480px){.reaction-choice{width:42px;height:42px;min-width:42px;min-height:42px}.reaction-choice span{font-size:20px}.reaction-guide{padding:10px}.reaction-guide-items span{font-size:10.5px}}
+
+
+/* Ver.1.10: show venue names even in small registered areas, and local reaction preview */
+.zone{font-size:clamp(8.5px,1.15vw,13px)}
+.zone-caption{display:block;max-width:100%;max-height:100%;overflow:hidden;line-height:1.12;text-wrap:balance}
+.reaction-preview{background:#fff9e8!important;border-color:#ebc866!important}
+.reaction-preview .reaction-hint{color:#7b5b08!important;font-weight:700}
+.reaction-test-note{margin:9px 0 0;padding:9px 10px;background:#fff8e5;border:1px solid #ead8a1;border-radius:9px;color:#6c5a24}

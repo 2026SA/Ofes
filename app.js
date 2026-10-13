@@ -56,7 +56,7 @@ function validData(v){
   const sd=out.sessions[session];
   return {id:p.id,reactionId:String(p.reactionId||''),session,start:sd?.start||String(p.start||'09:00'),end:sd?.end||String(p.end||'09:20'),grade:String(p.grade||''),title:String(p.title||'発表'),zoneId:String(p.zoneId||'')};
  });
- // Ver.1.9: 同じ学年・発表内容を複数セッションで繰り返す場合は、
+ // Ver.1.10: 同じ学年・発表内容を複数セッションで繰り返す場合は、
  // 会場や時間が違っても同じreactionIdを共有し、リアクションを「発表そのもの」に合算する。
  const reactionGroups=new Map();
  const reactionKey=p=>`${p.grade.trim()}|${p.title.trim()}`.toLocaleLowerCase('ja');
@@ -125,6 +125,7 @@ window.OFESCloud={
 window.addEventListener('ofes-cloud-published',e=>acceptPublished(e.detail?.data??null));
 
 let visitorBuilding='campus',session='current',visitorSelected='';
+let reactionPreviewMode=false,reactionPreviewProgram=null;
 const visitorZoom=Object.fromEntries(MAPS.map(m=>[m.id,100]));
 let adminMap='campus',editId='',editDraft=null,drawMode='',dragStart=null,dragRect=null,adminProgramVenue='';
 function syncSessionProgramTimes(target=state){
@@ -201,12 +202,14 @@ function renderSessionButtons(){
  $$('[data-session]').forEach(b=>b.onclick=()=>{session=b.dataset.session;renderVisitorMap();});
 }
 function zStyle(z){return `left:${bound(z.x,0,100)}%;top:${bound(z.y,0,100)}%;width:${bound(z.w,.1,100)}%;height:${bound(z.h,.1,100)}%;`}
-function zoneHtml(z,active,selected){const label=(z.w<12||z.h<12)?String(z.id).split('-').pop():z.name;return `<button type="button" class="zone ${active?'on':''} ${selected?'selected':''}" style="${zStyle(z)}" data-zone="${esc(z.id)}" title="${esc(z.name)}" aria-label="${esc(z.name)}"><span class="zone-caption">${esc(label)}</span></button>`}
+function zoneHtml(z,active,selected){const label=z.name||z.id;return `<button type="button" class="zone ${active?'on':''} ${selected?'selected':''}" style="${zStyle(z)}" data-zone="${esc(z.id)}" title="${esc(z.name)}" aria-label="${esc(z.name)}"><span class="zone-caption">${esc(label)}</span></button>`}
 function floorLabel(m){return m.floor?`${m.floor}階`:'学校全体図'}
 function floorDetailHtml(m){
  const z=getZone(visitorSelected);
  if(!z||z.mapId!==m.id)return '';
- const ps=state.programs.filter(p=>p.zoneId===z.id).slice().sort((a,b)=>timeNum(programTimes(a).start)-timeNum(programTimes(b).start)||timeNum(programTimes(a).end)-timeNum(programTimes(b).end)||String(a.id).localeCompare(String(b.id)));
+ let ps=state.programs.filter(p=>p.zoneId===z.id).slice();
+ if(reactionPreviewMode&&reactionPreviewProgram?.zoneId===z.id&&!ps.some(p=>p.id===reactionPreviewProgram.id))ps.push(reactionPreviewProgram);
+ ps.sort((a,b)=>timeNum(programTimes(a).start)-timeNum(programTimes(b).start)||timeNum(programTimes(a).end)-timeNum(programTimes(b).end)||String(a.id).localeCompare(String(b.id)));
  return `<h4>${esc(z.name)} <span class="pill">${esc(z.id)}</span></h4>${z.note?`<p>${esc(z.note)}</p>`:''}
  <p class="muted">${esc(m.name)}　登録されている発表：${ps.length}件</p>
  ${ps.length?`<div class="venue-program-list">${ps.map(p=>{const pt=programTimes(p),st=programStatus(p);return `<article class="venue-program-item status-border-${st.key}"><div class="venue-program-meta"><span class="program-status status-${st.key}">${st.label}</span><strong>${esc(sessionLabel(p.session))}</strong><span>${esc(pt.start)}〜${esc(pt.end)}</span></div><div class="venue-program-title">${p.grade?`<span class="program-grade">${esc(p.grade)}</span> `:''}${esc(p.title)}</div>${SESSION_IDS.includes(p.session)?reactionsHtml(p):''}</article>`}).join('')}</div>`:'<p>この会場のプログラムはまだ登録されていません。</p>'}`;
@@ -321,24 +324,26 @@ function readStampFromUrl(){const v=new URLSearchParams(location.search).get('st
  const current=stampList();if(!current.includes(n)){current.push(n);localStorage.setItem(STAMP_KEY,JSON.stringify(current));}
  renderStamps();setTab('stamp');}
 
-// Ver.1.9: 午前は会場詳細の各発表、午後はプログラム画面の各演目にリアクションを表示する。
+// Ver.1.10: 午前は会場詳細の各発表、午後はプログラム画面の各演目にリアクションを表示する。
 const REACTION_KINDS=[['good','👍','よかった'],['aha','💡','なるほど'],['amazing','✨','すごい'],['fun','😊','楽しかった'],['cheer','🙌','応援したい']];
 const reactionSelection={};
 let currentReactionUid='';
 function reactionEligibility(p){
+ const reactionId=p.reactionId||p.id;
+ if(reactionPreviewMode)return {active:true,preview:true,reason:'表示テスト中：アイコンを押すと選択・解除を試せます（Firestoreには保存しません）'};
  const pub=publishedState;
  if(!pub||!pub.reactionDeadlineAt)return {active:false,reason:'リアクション準備中（管理者の公開待ち）'};
- if(!pub.programs?.some(x=>x.id===p.id))return {active:false,reason:'発表を公開すると受付できます'};
+ if(!pub.programs?.some(x=>(x.reactionId||x.id)===reactionId))return {active:false,reason:'この発表をFirestoreへ公開すると受付できます'};
  const deadline=new Date(pub.reactionDeadline+':00+09:00');
  if(!Number.isFinite(deadline.getTime()))return {active:false,reason:'受付終了日時が未設定です'};
- return Date.now()<deadline.getTime()?{active:true,reason:`受付終了：${esc(pub.reactionDeadline.replace('T',' '))}（日本時間）`}:{active:false,reason:'リアクションの受付は終了しました'};
+ return Date.now()<deadline.getTime()?{active:true,preview:false,reason:`受付終了：${esc(pub.reactionDeadline.replace('T',' '))}（日本時間）`}:{active:false,reason:'リアクションの受付は終了しました'};
 }
 function reactionsHtml(p){
  const info=reactionEligibility(p);
  const reactionId=p.reactionId||p.id;
  const selected=reactionSelection[reactionId]||[];
- return `<div class="reactions-box" data-reaction-box="${esc(reactionId)}"><div class="reactions-title">この発表にリアクション</div>
-  <div class="reaction-choices">${REACTION_KINDS.map(([key,emoji,name])=>`<button type="button" title="${esc(name)}" aria-label="${esc(name)}" data-reaction-program="${esc(reactionId)}" data-reaction-kind="${key}" class="reaction-choice ${selected.includes(key)?'is-selected':''}" aria-pressed="${selected.includes(key)}" ${info.active?'':'disabled'}><span aria-hidden="true">${emoji}</span></button>`).join('')}</div>
+ return `<div class="reactions-box ${info.preview?'reaction-preview':''}" data-reaction-box="${esc(reactionId)}"><div class="reactions-title">この発表にリアクション</div>
+  <div class="reaction-choices">${REACTION_KINDS.map(([key,emoji,name])=>`<button type="button" title="${esc(name)}" aria-label="${esc(name)}" data-reaction-program="${esc(reactionId)}" data-reaction-kind="${key}" data-reaction-preview="${info.preview?'1':'0'}" class="reaction-choice ${selected.includes(key)?'is-selected':''}" aria-pressed="${selected.includes(key)}" ${info.active?'':'disabled'}><span aria-hidden="true">${emoji}</span></button>`).join('')}</div>
   <p class="reaction-hint" data-reaction-message="${esc(reactionId)}" role="status">${info.reason}</p></div>`;
 }
 function refreshReactionButtons(programId){
@@ -373,6 +378,13 @@ for(const container of [byId('programList'),byId('visitorMaps')]){
   const b=e.target.closest('button[data-reaction-program]');
   if(!b||b.disabled)return;
   const programId=b.dataset.reactionProgram,kind=b.dataset.reactionKind;
+  if(b.dataset.reactionPreview==='1'){
+   const current=reactionSelection[programId]||[];
+   reactionSelection[programId]=current.includes(kind)?current.filter(x=>x!==kind):[...current,kind];
+   refreshReactionButtons(programId);
+   reactionMessage(programId,reactionSelection[programId].length?`表示テスト：${reactionSelection[programId].length}種類を選択中。もう一度押すと取り消せます。`:'表示テスト：選択を取り消しました。');
+   return;
+  }
   if(!window.OFESReactions?.toggle)return reactionMessage(programId,'接続準備中です。少し待ってからお試しください。');
   await window.OFESReactions.toggle(programId,kind);
  });
@@ -381,7 +393,7 @@ for(const container of [byId('programList'),byId('visitorMaps')]){
 function renderPublic(){renderHeader();renderProgram();renderVisitorMap();renderStamps();}
 
 // 管理画面へのアクセスはブラウザ試作用の簡易パスワード。外部の書込権限には用いない。
-byId('openAdmin').onclick=()=>{byId('loginModal').hidden=false;byId('adminPassword').value='';byId('loginError').textContent='';byId('adminPassword').focus()};
+byId('openAdmin').onclick=()=>{reactionPreviewMode=false;reactionPreviewProgram=null;byId('loginModal').hidden=false;byId('adminPassword').value='';byId('loginError').textContent='';byId('adminPassword').focus()};
 byId('cancelLogin').onclick=()=>byId('loginModal').hidden=true;
 byId('loginForm').onsubmit=e=>{e.preventDefault();if(byId('adminPassword').value!==DEMO_ADMIN_PASSWORD){byId('loginError').textContent='パスワードが違います。';return}
  byId('loginModal').hidden=true;switchDraft();byId('adminPanel').hidden=false;renderPublic();renderAdmin();};
@@ -456,9 +468,18 @@ byId('zoneId').addEventListener('input',()=>{if(!editDraft)return;const v=normal
 function renderZoneGeometryOnly(){const layer=byId('adminZoneLayer');const active=layer.querySelector(`.zone.selected`);if(active&&editDraft)active.style.cssText=zStyle(editDraft);}
 byId('attachDemo').onclick=()=>{const r=readVenueForm();if(!r)return alert('先に会場ID・会場名・位置を入力してください。');
  if(!saveVenueRecord(r))return;
- let p=state.programs.find(x=>x.session==='s1'&&x.zoneId===r.id);
- if(!p){const d=sessionDef('s1');p={id:'p'+Date.now(),session:'s1',start:d.start,end:d.end,grade:'テスト',title:'表示テスト',zoneId:r.id};state.programs.push(p);}
- const d=sessionDef('s1');persist();editId=r.id;editDraft=clone(r);state.test.enabled=true;state.test.date=state.eventDate;state.test.time=d.start;renderAdmin();renderPublic();toast(`セッション①（${d.start}）の表示テストを設定しました`);};
+ const real=sessionProgramsForVenue(r.id)[0]||null;
+ const sid=real?.session||'s1',d=sessionDef(sid);
+ reactionPreviewProgram=real?null:{id:`preview-${r.id}`,reactionId:`preview-${r.id}`,session:sid,start:d.start,end:d.end,grade:'テスト',title:'リアクション表示テスト',zoneId:r.id,_previewOnly:true};
+ reactionPreviewMode=true;
+ state.test.enabled=true;state.test.date=state.eventDate;state.test.time=d.start;
+ persist();editId=r.id;editDraft=clone(r);
+ visitorBuilding=getMap(r.mapId).building;visitorSelected=r.id;session='current';
+ byId('adminPanel').hidden=true;
+ renderPublic();setTab('venues',{scrollTop:false});
+ requestAnimationFrame(()=>{const detail=byId(`floor-detail-${r.mapId}`);if(detail&&!detail.hidden)detail.scrollIntoView({behavior:'smooth',block:'center'});});
+ toast(`${sessionLabel(sid)}のリアクション表示テストを開始しました`);
+};
 
 function roomOptions(sel){return `<option value="">（会場未登録）</option>`+state.zones.slice().sort((a,b)=>a.id.localeCompare(b.id)).map(z=>`<option value="${esc(z.id)}" ${z.id===sel?'selected':''}>${esc(z.id)}｜${esc(z.name)}</option>`).join('')}
 function sessionOptions(sel){return SESSION_IDS.map(id=>`<option value="${id}" ${id===sel?'selected':''}>${esc(sessionLabel(id))}（${esc(sessionDef(id).start)}〜${esc(sessionDef(id).end)}）</option>`).join('')}

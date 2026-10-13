@@ -1,5 +1,5 @@
 /**
- * OFES Ver.1.9: Google Authentication + Firestore published content.
+ * OFES Ver.1.10: Google Authentication + Firestore published content.
  * 管理者はローカル下書きを明示的に公開する。来場者は認証なしで公開データを購読する。
  * セキュリティ境界は Firebase Security Rules（クライアントのパスワードではない）。
  */

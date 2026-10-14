@@ -536,56 +536,135 @@ function renderAdminPrograms(){
 function adminVenueProgramRow(p){return `<div class="venue-program-admin-row" data-program="${esc(p.id)}"><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年（複数可）<input data-vpfield="grade" maxlength="40" placeholder="例：7年生・8年生" value="${esc(p.grade||'')}"></label><label>発表グループ<input data-vpfield="group" maxlength="40" placeholder="例：A班・1班" value="${esc(p.group||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" placeholder="発表内容を入力" value="${esc(p.title)}"></label><div class="derived-time">${esc(programTimes(p).start)}〜${esc(programTimes(p).end)}</div><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
 function adminUnassignedRow(p){return `<div class="venue-program-admin-row legacy" data-program="${esc(p.id)}"><label>会場<select data-vpfield="zoneId">${roomOptions('')}</select></label><label>セッション<select data-vpfield="session">${sessionOptions(p.session)}</select></label><label>発表学年<input data-vpfield="grade" maxlength="40" value="${esc(p.grade||'')}"></label><label>発表グループ<input data-vpfield="group" maxlength="40" value="${esc(p.group||'')}"></label><label class="program-content-field">発表内容<input data-vpfield="title" maxlength="160" value="${esc(p.title)}"></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
 function adminOtherProgramRow(p){return `<div class="admin-program-row whole-program-row" data-program="${esc(p.id)}"><label>区分<select data-opfield="session"><option value="afternoon" ${p.session==='afternoon'?'selected':''}>午後（リアクション対象）</option><option value="other" ${p.session!=='afternoon'?'selected':''}>その他（リアクションなし）</option></select></label><label>開始<input type="time" data-opfield="start" value="${esc(p.start)}"></label><label>終了<input type="time" data-opfield="end" value="${esc(p.end)}"></label><label>発表学年<input data-opfield="grade" maxlength="40" placeholder="例：7年生・8年生" value="${esc(p.grade||'')}"></label><label>グループ<input data-opfield="group" maxlength="40" placeholder="例：合同A班" value="${esc(p.group||'')}"></label><label>内容<input data-opfield="title" maxlength="120" value="${esc(p.title)}"></label><label>会場<select data-opfield="zoneId">${roomOptions(p.zoneId)}</select></label><button type="button" class="btn danger" data-del-program="${esc(p.id)}">削除</button></div>`}
-function demoProgramRows(){
+function demoVenuePool(){
+ const excluded=/(廊下|階段|トイレ|便所|エレベーター|入口|玄関|駐車)/;
  const eligible=state.zones.filter(z=>!['building','parking'].includes(z.kind));
- const preferred=[...eligible.filter(z=>z.kind==='classroom'),...eligible.filter(z=>z.kind!=='classroom')];
- const unique=[];const seen=new Set();for(const z of preferred){if(!seen.has(z.id)){seen.add(z.id);unique.push(z);}}
- if(!unique.length)return [];
- const gradeDemos=[
-  ['1年生','大豊町で見つけたすてきなもの'],
-  ['2年生','まちのおすすめを紹介しよう'],
-  ['3年生','大豊町の自然を調べよう'],
-  ['4年生','地域の人から学んだこと'],
-  ['5年生','大豊町の産業とくらし'],
-  ['6年生','未来の大豊町を考える'],
-  ['7年生','大豊町の魅力を英語で伝えよう'],
-  ['8年生','地域の課題と解決策を考える'],
-  ['9年生','探究学習の成果と提案']
- ];
- const rows=[];let demoIndex=0;
- for(const sid of SESSION_IDS){
-  // 同じセッションに本番発表が登録済みの会場は避け、空いている会場を最大4か所使う。
-  const rooms=unique.filter(z=>!state.programs.some(p=>!String(p.id).startsWith('demo-')&&p.zoneId===z.id&&p.session===sid)).slice(0,4);
+ const rank=Object.fromEntries(MAPS.map((m,i)=>[m.id,i]));
+ const sortZones=a=>a.sort((x,y)=>(rank[x.mapId]??99)-(rank[y.mapId]??99)||String(x.id).localeCompare(String(y.id),'ja'));
+ const classroom=sortZones(eligible.filter(z=>z.kind==='classroom'&&!excluded.test(z.name||'')));
+ const exhibit=sortZones(eligible.filter(z=>z.kind==='exhibit'&&!excluded.test(z.name||'')));
+ const other=sortZones(eligible.filter(z=>!['classroom','exhibit','hall'].includes(z.kind)&&!excluded.test(z.name||'')));
+ const hall=sortZones(eligible.filter(z=>z.kind==='hall'&&!excluded.test(z.name||'')));
+ const rest=sortZones(eligible.filter(z=>!classroom.includes(z)&&!exhibit.includes(z)&&!other.includes(z)&&!hall.includes(z)));
+ return [...classroom,...exhibit,...other,...hall,...rest];
+}
+function demoRoomsForSession(pool,sid,sessionIndex){
+ const occupied=new Set(state.programs.filter(p=>!String(p.id).startsWith('demo-')&&p.session===sid&&p.zoneId).map(p=>p.zoneId));
+ let available=pool.filter(z=>!occupied.has(z.id));
+ if(!available.length)return [];
+ // 午前のデモでは体育館を避け、教室・展示会場を優先する。4会場に足りない場合だけホールを補う。
+ const noHall=available.filter(z=>z.kind!=='hall');
+ if(noHall.length>=4)available=noHall;
+ const picked=[];
+ const offset=(sessionIndex*4)%available.length;
+ for(let i=0;i<available.length&&picked.length<4;i++){
+  const z=available[(offset+i)%available.length];
+  if(!picked.some(x=>x.id===z.id))picked.push(z);
+ }
+ return picked;
+}
+function demoHallZoneId(pool){
+ const named=pool.find(z=>/(体育館|アリーナ|講堂|ホール)/.test(z.name||''));
+ const hall=named||pool.find(z=>z.kind==='hall');
+ if(hall)return hall.id;
+ if(!pool.length)return '';
+ return pool.slice().sort((a,b)=>(Number(b.w||0)*Number(b.h||0))-(Number(a.w||0)*Number(a.h||0)))[0].id;
+}
+function demoProgramRows(){
+ const pool=demoVenuePool();
+ if(!pool.length)return [];
+ // 2025年度プログラムのセッション構成を参考にした試作用データ。
+ // 発表内容と会場はデモ用に再構成し、最大4会場×4セッションで1〜9年生を確認できるようにする。
+ const plan={
+  s1:[
+   {grade:'1年生',group:'A班',title:'学校のすてきを見つけよう'},
+   {grade:'4年生',group:'A班',title:'大豊町の自然を調べよう'},
+   {grade:'6年生',group:'A班',title:'地域の魅力を伝えよう'},
+   {grade:'9年生',group:'A班',title:'未来の大豊町を考える'}
+  ],
+  s2:[
+   {grade:'3年生',group:'A班',title:'町たんけんで見つけたこと'},
+   {grade:'6年生',group:'B班',title:'大豊町の課題とこれから'},
+   {grade:'7年生',group:'A班',title:'ふるさと大豊の魅力'},
+   {grade:'9年生',group:'B班',title:'地域を元気にするアイデア'}
+  ],
+  s3:[
+   {grade:'2年生',group:'A班',title:'大豊町のすてきな場所'},
+   {grade:'5年生',group:'A班',title:'大豊町の産業を調べよう'},
+   {grade:'8年生',group:'A班',title:'探究学習の成果発表'},
+   {grade:'7年生・8年生',group:'合同A班',title:'大豊町の魅力を未来へ'}
+  ],
+  s4:[
+   {grade:'2年生',group:'B班',title:'地域の人に聞いてみよう'},
+   {grade:'4年生',group:'B班',title:'大豊町の文化を伝えよう'},
+   {grade:'5年生',group:'B班',title:'地域を支える仕事'},
+   {grade:'8年生',group:'B班',title:'私たちが考える大豊町の未来'}
+  ]
+ };
+ const rows=[];
+ SESSION_IDS.forEach((sid,sessionIndex)=>{
+  const rooms=demoRoomsForSession(pool,sid,sessionIndex);
   const d=sessionDef(sid);
   rooms.forEach((room,roomIndex)=>{
-   const gradeIndex=demoIndex%gradeDemos.length;
-   const [grade,title]=gradeDemos[gradeIndex];
+   const item=plan[sid][roomIndex];
    rows.push({
-    id:`demo-${sid}-${roomIndex+1}`,
-    reactionId:'',
-    session:sid,start:d.start,end:d.end,grade,group:`${String.fromCharCode(65+roomIndex)}班`,title,zoneId:room.id
+    id:`demo-${sid}-${roomIndex+1}`,reactionId:'',session:sid,start:d.start,end:d.end,
+    grade:item.grade,group:item.group,title:item.title,zoneId:room.id
    });
-   demoIndex++;
   });
- }
+ });
  return rows;
+}
+function demoWholeProgramRows(){
+ const pool=demoVenuePool();
+ const hall=demoHallZoneId(pool);
+ const r=(id,session,start,end,grade,group,title,zoneId='')=>({id:`demo-${id}`,reactionId:'',session,start,end,grade,group,title,zoneId});
+ return [
+  r('opening','other','08:45','09:05','','','開会行事',hall),
+  r('attraction','other','09:05','09:20','','','アトラクション',hall),
+  r('zenki-choir','other','11:25','11:40','1年生・2年生・3年生・4年生・5年生','','前期合唱「大豊の四季」',hall),
+  r('review','other','11:40','11:50','','','午前の部 講評',hall),
+  r('lunch','other','11:50','12:40','','','昼休み・スライド上映',hall),
+  r('pm-open','other','12:40','12:43','5年生','','午後の部 開始のあいさつ',hall),
+  r('pm01','afternoon','12:43','12:53','4年生','演舞チーム','演舞「寺内太刀踊り」',hall),
+  r('pm02','afternoon','12:53','13:00','6年生・7年生・8年生・9年生','後期生徒','後期合唱「ふるさと」',hall),
+  r('prep01','other','13:00','13:10','','','幕間・ステージ準備',hall),
+  r('pm03','afternoon','13:10','13:17','','音楽クラブ','器楽合奏「残酷な大豊のテーゼ」',hall),
+  r('prep02','other','13:17','13:32','','','幕間・ステージ準備',hall),
+  r('pm04','afternoon','13:32','13:38','8年生','英語発表チーム','英語発表「My Neighbor Totoro」',hall),
+  r('pm05','afternoon','13:38','13:44','8年生','ダンスチーム','ダンス「HIP」',hall),
+  r('pm06','afternoon','13:44','13:50','8年生','歌チーム','歌「地球儀」',hall),
+  r('pm07','afternoon','13:50','13:56','7年生・9年生','合同ステージ','歌・ダンス「スキスキ星人」',hall),
+  r('pm-pta','afternoon','13:56','14:02','','PTAバンド','PTAバンド演奏「大豊のゆず」',hall),
+  r('pm08','afternoon','14:02','14:08','6年生・7年生','合同ステージ','演奏・ダンス「Magnetic」',hall),
+  r('pm09','afternoon','14:08','14:14','7年生・8年生・9年生','合同ステージ','劇・ダンス「アン・・・マン」',hall),
+  r('pm10','afternoon','14:14','14:20','9年生','サックスチーム','サックス演奏「情熱大陸」',hall),
+  r('prep03','other','14:20','14:30','','','幕間・ステージ準備',hall),
+  r('pm11','afternoon','14:30','14:50','','吹奏楽部','吹奏楽メドレー',hall),
+  r('closing','other','14:50','15:00','','','閉会行事',hall)
+ ];
 }
 function addDemoPrograms(){
  if(!state.zones.length){alert('先に「会場・配置図」で1か所以上の会場を登録してください。');return;}
- const demo=demoProgramRows();
- if(!demo.length){alert('デモ発表を置ける会場がありません。');return;}
+ const morning=demoProgramRows();
+ if(!morning.length){alert('デモ発表を置ける会場がありません。');return;}
+ const whole=demoWholeProgramRows();
+ // 以前のデモだけを入れ替える。本番データには触れない。
  state.programs=state.programs.filter(p=>!String(p.id).startsWith('demo-'));
- state.programs.push(...demo);
- if(demo[0]?.zoneId){
-  adminProgramVenue=demo[0].zoneId;
-  const firstZone=getZone(demo[0].zoneId);
+ // 初期状態の仮プログラムが未編集のまま残っている場合だけ除き、デモ表示を分かりやすくする。
+ state.programs=state.programs.filter(p=>!(p.id==='p1'&&p.session==='other'&&p.title==='開会行事・アトラクション')&&!(p.id==='p6'&&p.session==='afternoon'&&p.title==='午後のステージ発表（仮）'));
+ state.programs.push(...morning,...whole);
+ if(morning[0]?.zoneId){
+  adminProgramVenue=morning[0].zoneId;
+  const firstZone=getZone(morning[0].zoneId);
   if(firstZone)visitorBuilding=getMap(firstZone.mapId).building;
  }
  // 登録直後に場所の反映を確認しやすいよう、同じ端末では下書きを公開画面へ即時プレビューする。
  demoDraftPreview=true;session='s1';visitorSelected='';state=draftState;
  persist();renderAdminPrograms();renderPublic();
- const msg=byId('demoDataMessage');if(msg)msg.textContent=`デモ発表を${demo.length}件登録しました。最大4会場×4セッションで、1〜9年生の発表を配置しています。この端末では会場案内に即時反映され、発表カードのリアクションもその場で試せます。Firestoreへ公開すると、実際の匿名リアクションとして保存・集計できます。`;
- toast('デモデータを登録しました');
+ const afternoonCount=whole.filter(p=>p.session==='afternoon').length;
+ const msg=byId('demoDataMessage');if(msg)msg.textContent=`2025年度プログラムの流れを参考に、午前${morning.length}件（最大4会場×4セッション）と午後${afternoonCount}件のリアクション対象ステージを含むデモデータを登録しました。1〜9年生、複数グループ、合同発表を確認できます。この端末では会場案内に即時反映されます。`;
+ toast('2025年度プログラム参考のデモデータを登録しました');
 }
 function removeDemoPrograms(){
  const n=state.programs.filter(p=>String(p.id).startsWith('demo-')).length;

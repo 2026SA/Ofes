@@ -52,8 +52,13 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isSelf(voterUid) && isAccepting());
     }
 
-    // 全クリア直前に作る復元ポイント。管理者以外は一切アクセス不可。
+    // 全クリア直前に作るリアクション復元ポイント。管理者以外は一切アクセス不可。
     match /reactionBackups/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Firestore公開直前に作る公開データの復元ポイント。管理者以外は一切アクセス不可。
+    match /publicationBackups/{document=**} {
       allow read, write: if isAdmin();
     }
 

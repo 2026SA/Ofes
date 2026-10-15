@@ -74,7 +74,7 @@
 <div id="loginModal" class="modal" hidden><div class="modal-inner"><h2>管理画面を開く</h2><p class="muted">このパスワードはブラウザ内の試作設定を編集するための簡易ロックです。Firebaseの権限を与えるものではありません。</p><form id="loginForm"><label>管理者パスワード<input type="password" id="adminPassword" required autocomplete="current-password"></label><p id="loginError" class="error"></p><div class="modal-actions"><button type="button" class="btn light" id="cancelLogin">キャンセル</button><button type="submit" class="btn primary">ログイン</button></div></form></div></div>
 
 <section id="adminPanel" class="admin-panel" hidden>
-  <header class="admin-header"><div><span class="eyebrow">ADMINISTRATOR</span><h2>OFES 管理画面</h2><p>Ver.1.16 · 2025年度プログラム参考デモ</p></div><button id="closeAdmin" class="btn light">閉じる ×</button></header>
+  <header class="admin-header"><div><span class="eyebrow">ADMINISTRATOR</span><h2>OFES 管理画面</h2><p>Ver.1.17 · Firestore公開前自動バックアップ</p></div><button id="closeAdmin" class="btn light">閉じる ×</button></header>
   <nav class="admin-tabs" id="adminNav" aria-label="管理項目"><button data-admin="firebase" class="active">🔑 Firebase接続</button><button data-admin="venues">会場・配置図</button><button data-admin="program">プログラム</button><button data-admin="reactions">リアクション集計</button><button data-admin="basic">年度・時刻テスト</button><button data-admin="notice">お知らせPDF</button><button data-admin="data">データ保存</button></nav>
 
   <div class="admin-page active" id="admin-firebase">
@@ -214,7 +214,15 @@
       <p class="cloud-state" id="firebasePublishSummary" role="status">公開データを確認中…</p>
       <div class="row-actions"><button type="button" id="firebasePublish" class="btn primary" disabled>Firestoreへ公開</button><button type="button" id="firebaseLoadDraft" class="btn light" disabled>公開データを編集用に読み込む</button></div>
       <p id="firebasePublishMessage" class="caption" role="status">管理者Googleログイン後に公開できます。</p>
+      <p class="caption"><strong>安全機能：</strong>2回目以降の公開では、現在のFirestore公開データを<strong>公開直前に自動で復元ポイントへ保存</strong>します。復元ポイントの保存に失敗した場合は、新しい内容を公開しません。</p>
       <p class="caption"><strong>注意：</strong>公開するのは年度・開催日・スローガン・会場・プログラム・リアクション受付期限です。管理者の<strong>テスト日時</strong>と、来場者の<strong>スタンプ取得状況</strong>は公開・上書きしません。「公開データを編集用に読み込む」は現在の下書きを置き換えるため、先にJSONバックアップを保存してください。</p>
+    </div>
+    <div class="editor-card basic-card"><h3>公開データの復元</h3>
+      <p>「Firestoreへ公開」する直前の公開状態を自動保存しています。誤って会場やプログラムを消した状態で公開した場合は、ここから<strong>直前の公開状態へ戻せます</strong>。</p>
+      <p id="publicationBackupSummary" class="cloud-state" role="status">復元ポイントを確認中…</p>
+      <div class="row-actions"><button type="button" id="firebaseRestorePrevious" class="btn light" disabled>直前の公開状態へ戻す</button></div>
+      <p id="publicationBackupMessage" class="caption" role="status">管理者Googleログイン後に復元ポイントを確認できます。</p>
+      <p class="caption"><strong>二重保護：</strong>復元を実行する直前にも、現在の公開状態を新しい復元ポイントとして自動保存します。そのため、復元後にもう一度戻すこともできます。</p>
     </div>
     <div class="editor-card basic-card"><h3>JSONバックアップ（引き継ぎ用）</h3>
       <p>ブラウザや端末を変更する前に、設定JSONを保存してください。古いバージョンで登録した教室データも引き継げます。</p>

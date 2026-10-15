@@ -1,5 +1,5 @@
 /**
- * OFES Ver.1.16: Google Authentication + Firestore published content.
+ * OFES Ver.1.17: Google Authentication + Firestore published content.
  * 管理者はローカル下書きを明示的に公開する。来場者は認証なしで公開データを購読する。
  * セキュリティ境界は Firebase Security Rules（クライアントのパスワードではない）。
  */
@@ -23,7 +23,11 @@ const summary = el('firebasePublishSummary');
 const publishButton = el('firebasePublish');
 const loadButton = el('firebaseLoadDraft');
 const publishMessage = el('firebasePublishMessage');
+const restorePublishedButton = el('firebaseRestorePrevious');
+const publicationBackupSummary = el('publicationBackupSummary');
+const publicationBackupMessage = el('publicationBackupMessage');
 let isLoggedIn=false, isBusy=false, publishedData=null, lastPublishTime=null, cloudLoaded=false, cloudError=false;
+let latestPublicationBackup=null;
 const REACTION_KEYS=['good','aha','amazing','fun','cheer'];
 const REACTION_LABELS=['👍 よかった','💡 なるほど','✨ すごい','😊 楽しかった','🙌 応援したい'];
 let latestStats=null, latestAllStats=[];
@@ -50,6 +54,7 @@ function errorText(error) {
 function setUiState(){
  publishButton.disabled=!isLoggedIn || isBusy || !cloudLoaded || cloudError;
  loadButton.disabled=!publishedData || isBusy;
+ if(restorePublishedButton)restorePublishedButton.disabled=!isLoggedIn || isBusy || !latestPublicationBackup;
  if(cloudError){
   status(cloudStatus,'接続エラー','error');
   summary.textContent='公開データにアクセスできません。Firestoreルールとネットワークをご確認ください。';
@@ -319,6 +324,50 @@ try{
  const clearButton=el('reactionClearAll'),restoreButton=el('reactionRestoreLatest'),clearMessage=el('reactionClearMessage'),restorePointLabel=el('reactionRestorePoint');
  let latestRestorePoint=null;
  const isGoogleAdmin=()=>!!auth.currentUser?.providerData?.some(x=>x.providerId==='google.com');
+
+ // Ver.1.17: Firestore公開前の公開データを自動保存し、直前状態へ戻せるようにする。
+ const publicationBackupRef=(backupId)=>doc(db,'publicationBackups','site','points',backupId);
+ const publicationBackupCol=()=>collection(db,'publicationBackups','site','points');
+ async function createPublicationBackup(reason='pre-publish'){
+  if(!publishedData)return null;
+  if(!isGoogleAdmin())throw Error('管理者Googleログインが必要です。');
+  const backupId=`pb-${Date.now()}`, createdAtClient=new Date().toISOString();
+  await setDoc(publicationBackupRef(backupId),{
+   schemaVersion:1,complete:true,reason,createdAt:serverTimestamp(),createdAtClient,createdByUid:auth.currentUser.uid,
+   sourceYear:publishedData.year||'',sourceEventDate:publishedData.eventDate||'',
+   sourceZoneCount:publishedData.zones?.length||0,sourceProgramCount:publishedData.programs?.length||0,
+   data:publishedData
+  });
+  return {backupId,createdAtClient,sourceYear:publishedData.year||'',sourceZoneCount:publishedData.zones?.length||0,sourceProgramCount:publishedData.programs?.length||0,data:publishedData};
+ }
+ async function refreshPublicationBackupInfo(){
+  latestPublicationBackup=null;
+  if(!publicationBackupSummary||!restorePublishedButton)return;
+  restorePublishedButton.disabled=true;
+  if(!isGoogleAdmin()){
+   publicationBackupSummary.textContent='管理者Googleログイン後に復元ポイントを確認できます。';
+   if(publicationBackupMessage)publicationBackupMessage.textContent='公開前バックアップは管理者だけが読み書きできます。';
+   return;
+  }
+  publicationBackupSummary.textContent='復元ポイントを確認中…';
+  try{
+   const snap=await getDocs(publicationBackupCol());
+   const points=snap.docs.map(d=>({backupId:d.id,...d.data()})).filter(x=>x.complete&&x.data).sort((a,b)=>String(b.createdAtClient||'').localeCompare(String(a.createdAtClient||'')));
+   latestPublicationBackup=points[0]||null;
+   if(!latestPublicationBackup){
+    publicationBackupSummary.textContent='復元ポイントはまだありません。2回目以降の「Firestoreへ公開」で自動作成されます。';
+    if(publicationBackupMessage)publicationBackupMessage.textContent='初回公開の前には戻す元の公開データがないため、復元ポイントは作成されません。';
+    return;
+   }
+   const when=new Date(latestPublicationBackup.createdAtClient).toLocaleString('ja-JP');
+   publicationBackupSummary.textContent=`直前の復元ポイント：${when}／${latestPublicationBackup.sourceYear||'―'}年度／会場${latestPublicationBackup.sourceZoneCount||0}か所／プログラム${latestPublicationBackup.sourceProgramCount||0}件`;
+   if(publicationBackupMessage)publicationBackupMessage.textContent='「直前の公開状態へ戻す」を押すと、この復元ポイントを公開データへ戻します。';
+   restorePublishedButton.disabled=isBusy;
+  }catch(error){
+   publicationBackupSummary.textContent=`復元ポイントを確認できませんでした：${errorText(error)}`;
+   if(publicationBackupMessage)publicationBackupMessage.textContent='Firestoreルールに publicationBackups の管理者権限があるか確認してください。';
+  }
+ }
  async function commitOps(ops){
   for(let i=0;i<ops.length;i+=450){
    const batch=writeBatch(db);
@@ -425,6 +474,7 @@ try{
   cloudLoaded=true;cloudError=false;
   setUiState();
   renderReactionStatsOptions();
+  if(isGoogleAdmin())refreshPublicationBackupInfo();
   window.dispatchEvent(new CustomEvent('ofes-cloud-published',{detail:{data:publishedData}}));
  },(error)=>{
   cloudError=true;cloudLoaded=false;setUiState();
@@ -442,6 +492,7 @@ try{
   window.dispatchEvent(new CustomEvent('ofes-reaction-uid',{detail:{uid:user?.uid||''}}));
   setUiState();
   if(clearButton)clearButton.disabled=!isGoogle;if(restoreButton&&!isGoogle)restoreButton.disabled=true;refreshRestorePointInfo();
+  refreshPublicationBackupInfo();
   status(readResult,isGoogle?'Firestoreの読み取り権限を確認できます。':'管理者Googleログイン後に確認できます。');
   if(isGoogle){
    status(authStatus,'Googleログイン成功','ok');
@@ -494,17 +545,49 @@ try{
   const before=publishedData?`現在の公開データ（会場${publishedData.zones?.length||0}か所）を上書きします。`:'初めての公開です。';
   const warning=publishedData?.zones?.length>payload.zones.length?'\n【注意】現在の公開会場数より下書きの会場数が少なくなっています。ほかの端末で教室登録を進めている場合は、公開しないでください。\n':'';
   if(!confirm(`${before}\n${warning}\n年度：${payload.year}\n会場：${payload.zones.length}か所\nプログラム：${payload.programs.length}件\n受付終了：${payload.reactionDeadline}（日本時間）\n\nこの内容を来場者向けに公開してよろしいですか？`))return;
-  isBusy=true;setUiState();status(publishMessage,'Firestoreへ公開しています。画面を閉じずにお待ちください…','loading');
+  isBusy=true;setUiState();
+  let backupPoint=null;
   try{
+   // 既存公開データがある場合は、上書きの前に必ず復元ポイントを作る。保存に失敗したら公開もしない。
+   if(publishedData){
+    status(publishMessage,'現在の公開状態を復元ポイントへ自動保存しています…','loading');
+    backupPoint=await createPublicationBackup('pre-publish');
+   }
+   status(publishMessage,'Firestoreへ公開しています。画面を閉じずにお待ちください…','loading');
    // Firestore Rules: only allow this path's write for the admin UID.
    const deadlineDate=new Date(`${payload.reactionDeadline}:00+09:00`);
    if(!Number.isFinite(deadlineDate.getTime()))throw Error('リアクション受付終了日時の形式が正しくありません。');
    // ファイル内の旧スキーマは変えず、公開ドキュメントにだけ timestamp を追加する。
    await setDoc(publicDoc,{...payload,programIds:[...new Set(payload.programs.map(p=>p.reactionId||p.id))],reactionDeadlineAt:Timestamp.fromDate(deadlineDate),reactionRevision:Number(publishedData?.reactionRevision||0),updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid});
-   status(publishMessage,'Firestoreへの公開が完了しました。別の端末でも同じ内容を閲覧できます。','ok');
-  }catch(error){status(publishMessage,`公開に失敗：${errorText(error)}`,'error');}
-  finally{isBusy=false;setUiState();}
+   status(publishMessage,backupPoint?`Firestoreへの公開が完了しました。公開前の復元ポイント ${backupPoint.backupId} も保存しました。`:'Firestoreへの初回公開が完了しました。別の端末でも同じ内容を閲覧できます。','ok');
+  }catch(error){status(publishMessage,`公開に失敗：${errorText(error)}${publishedData?'（公開前バックアップに失敗した場合、新しい内容は公開していません）':''}`,'error');}
+  finally{isBusy=false;setUiState();await refreshPublicationBackupInfo();}
  });
+ restorePublishedButton?.addEventListener('click',async()=>{
+  if(!isGoogleAdmin()||isBusy||!latestPublicationBackup)return;
+  const point=latestPublicationBackup;
+  const when=new Date(point.createdAtClient).toLocaleString('ja-JP');
+  if(!confirm(`【公開データの復元】\n\n${when} に自動保存した公開状態へ戻します。\n会場：${point.sourceZoneCount||0}か所\nプログラム：${point.sourceProgramCount||0}件\n\n復元する直前の現在の公開状態も、新しい復元ポイントとして自動保存します。\n\n復元してよろしいですか？`))return;
+  isBusy=true;setUiState();
+  try{
+   if(publishedData){
+    status(publicationBackupMessage,'復元前の現在状態を安全用の復元ポイントへ保存しています…','loading');
+    await createPublicationBackup('pre-restore');
+   }
+   status(publicationBackupMessage,'直前の公開状態へ復元しています…','loading');
+   const backupSnap=await getDoc(publicationBackupRef(point.backupId));
+   if(!backupSnap.exists())throw Error('復元ポイントが見つかりません。');
+   const backup=backupSnap.data();
+   if(!backup.complete||!backup.data)throw Error('復元ポイントのデータが不完全です。');
+   await setDoc(publicDoc,{...backup.data,updatedAt:serverTimestamp(),updatedByUid:auth.currentUser.uid,restoredFromBackupId:point.backupId});
+   status(publicationBackupMessage,'直前の公開状態へ復元しました。来場者画面にも反映されます。復元前の状態も保存済みです。','ok');
+  }catch(error){
+   status(publicationBackupMessage,`復元に失敗：${errorText(error)}`,'error');
+  }finally{
+   isBusy=false;setUiState();await refreshPublicationBackupInfo();
+  }
+ });
+
  loadButton.addEventListener('click',()=>{
   if(!publishedData||isBusy)return;
   if(!confirm('現在のブラウザ内の下書きが、Firestoreの公開データで上書きされます。\n\n必要な場合は先に「下書きの設定JSONを書き出す」でバックアップしてください。\n\n読み込みますか？'))return;
